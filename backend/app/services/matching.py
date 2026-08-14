@@ -215,7 +215,10 @@ async def _attach_details(opps: list[Opportunity]) -> None:
         o.cost_sharing = syn.get("costSharing") in (True, "true", "Yes", "yes")
         o.summary = _strip_html(syn.get("synopsisDesc") or "")[:900]
         if syn.get("responseDateStr"):
-            o.close_date = syn["responseDateStr"]
+            # fetchOpportunity format: "2026-08-20-00-00-00" -> "08/20/2026"
+            m = re.match(r"(\d{4})-(\d{2})-(\d{2})", syn["responseDateStr"])
+            if m:
+                o.close_date = f"{m.group(2)}/{m.group(3)}/{m.group(1)}"
         flag, descs = eligibility.evaluate(syn.get("applicantTypes") or [])
         o.eligibility_flag = flag
         o.eligible_applicants = descs[:6]

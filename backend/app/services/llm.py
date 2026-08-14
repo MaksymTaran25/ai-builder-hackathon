@@ -126,7 +126,9 @@ def _extract_mock(text: str) -> tuple[StartupProfile, list[FollowUpQuestion]]:
     if m:
         p.employees = int(m.group(1))
 
-    m = re.search(r"raised\s+\$?([\d.,]+\s?[kmb]?)", t)
+    m = re.search(r"raised\s+\$?([\d.,]+\s?[kmb]?)", t) or re.search(
+        r"\$([\d.,]+\s?[kmb]?)\s+raised", t
+    )
     if m:
         p.capital_raised_usd = _money(m.group(1))
 
