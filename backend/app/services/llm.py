@@ -143,7 +143,8 @@ def _extract_mock(text: str) -> tuple[StartupProfile, list[FollowUpQuestion]]:
         ("health", "Healthcare technology"), ("hospital", "Healthcare technology"),
         ("manufactur", "Advanced manufacturing"), ("aerospace", "Aerospace"),
         ("water", "Water technology"), ("cyber", "Cybersecurity"),
-        ("education", "Consumer / education technology"), ("youth", "Consumer / education technology"),
+        ("marketplace", "Consumer marketplace"), ("youth", "Consumer / family services"),
+        ("education", "Education technology"),
     ]:
         if kw in t:
             p.industry = industry

@@ -12,7 +12,7 @@ from ..models import (
     Opportunity,
     StartupProfile,
 )
-from . import grants_gov, llm, sbir, usaspending
+from . import grants_gov, llm, sbir, usaspending, utah
 
 log = logging.getLogger(__name__)
 
@@ -78,20 +78,40 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
             o.score, o.fit_tier, _ = scores[o.source_id]
 
     # SBIR pathway cards: deterministic score from award history depth
+    rd = _has_rd_signal(profile)
     for o in sbir_opps:
         n = o.history.similar_companies if o.history else 0
         o.score = min(92.0, 68.0 + n / 8)
         o.fit_tier = FitTier.likely if n >= 40 else FitTier.potential if n >= 8 else FitTier.adjacent
+        if not rd:
+            # SBIR funds R&D; a non-R&D business model can't be a likely fit
+            o.score = min(o.score, 48.0)
+            o.fit_tier = FitTier.adjacent
 
     opps = [o for o in opps if o.fit_tier != FitTier.not_fit]
     opps.sort(key=lambda o: o.score, reverse=True)
     merged = _interleave(sbir_opps, opps)[:MAX_RETURNED]
 
+    if profile.state == "UT":
+        merged.extend(utah.match_programs(profile.description, profile.industry, max_n=3))
+
     # Honest read when nothing scores strongly (e.g. consumer marketplaces):
     # judges reward "there probably isn't a strong match" over inflated results.
-    strong = [o for o in merged if o.fit_tier in (FitTier.likely, FitTier.potential)]
+    if not rd:
+        # Federal grants overwhelmingly fund R&D or public services; without an R&D
+        # component, cap enthusiasm and say so honestly.
+        for o in merged:
+            if o.fit_tier == FitTier.likely:
+                o.fit_tier = FitTier.potential
+                o.score = min(o.score, 67.0)
+
+    strong = [o for o in merged if o.fit_tier == FitTier.likely]
     top5 = sorted((o.score for o in merged), reverse=True)[:5]
-    weak_overall = len(strong) <= 2 or (top5 and sorted(top5)[len(top5) // 2] < 78)
+    weak_overall = (
+        not rd
+        or len([o for o in merged if o.fit_tier in (FitTier.likely, FitTier.potential)]) <= 2
+        or (top5 and sorted(top5)[len(top5) // 2] < 78)
+    )
     if not overall_note and weak_overall:
         overall_note = (
             "Traditional federal grants look like a weak fit for this business model — most "
@@ -121,6 +141,29 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
             o.explanation = e
 
     return MatchResponse(summary=_summarize(merged, overall_note), opportunities=merged)
+
+
+RD_TERMS = (
+    "r&d", "research", "develop", "ai", "machine learning", "sensor", "hardware",
+    "clinical", "biotech", "manufactur", "cyber", "engineering", "prototype",
+    "patent", "deep tech", "platform",
+)
+CONSUMER_TERMS = ("marketplace", "parents", "consumer", "enrichment", "booking", "e-commerce")
+
+
+def _has_rd_signal(profile: StartupProfile) -> bool:
+    """SBIR/most federal grants fund R&D. Consumer businesses without R&D language
+    should be told the truth instead of shown inflated matches."""
+    import re
+
+    text = " ".join(
+        filter(None, [profile.description, profile.industry, " ".join(profile.technology or [])])
+    ).lower()
+    consumer = any(w in text for w in CONSUMER_TERMS)
+    rd_hits = sum(1 for w in RD_TERMS if re.search(rf"\b{re.escape(w)}", text))
+    if consumer:
+        return rd_hits >= 3  # a consumer marketplace needs real R&D language to count
+    return rd_hits >= 1
 
 
 def _interleave(sbir_opps: list[Opportunity], grant_opps: list[Opportunity]) -> list[Opportunity]:

@@ -9,6 +9,8 @@ const TIER_META: Record<FitTier, { label: string; cls: string; dot: string }> = 
 
 export default function OpportunityMap({ data, onBack }: { data: MatchResponse; onBack: () => void }) {
   const s = data.summary
+  const federal = data.opportunities.filter((o) => o.source !== 'utah')
+  const utah = data.opportunities.filter((o) => o.source === 'utah')
   return (
     <div className="mx-auto max-w-4xl px-6 pt-12 pb-24">
       <button onClick={onBack} className="mb-6 text-sm text-slate-400 hover:text-slate-600">
@@ -37,10 +39,28 @@ export default function OpportunityMap({ data, onBack }: { data: MatchResponse; 
       )}
 
       <div className="mt-8 space-y-5">
-        {data.opportunities.map((o, i) => (
+        {federal.map((o, i) => (
           <OppCard key={o.source_id} o={o} rank={i + 1} />
         ))}
       </div>
+
+      {utah.length > 0 && (
+        <>
+          <div className="mt-12 mb-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-600">
+              🏔️ The Utah Advantage
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              State programs your company can tap alongside (or instead of) federal funding.
+            </p>
+          </div>
+          <div className="space-y-5">
+            {utah.map((o, i) => (
+              <OppCard key={o.source_id} o={o} rank={federal.length + i + 1} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -85,7 +105,9 @@ function OppCard({ o, rank }: { o: Opportunity; rank: number }) {
         <div className="shrink-0 text-right text-sm">
           {(o.award_floor_usd || o.award_ceiling_usd) && (
             <div className="font-semibold text-slate-900">
-              {fmtUSD(o.award_floor_usd)}–{fmtUSD(o.award_ceiling_usd)}
+              {o.award_floor_usd && o.award_ceiling_usd
+                ? `${fmtUSD(o.award_floor_usd)}–${fmtUSD(o.award_ceiling_usd)}`
+                : `up to ${fmtUSD(o.award_ceiling_usd ?? o.award_floor_usd)}`}
             </div>
           )}
           {o.close_date && <div className="mt-0.5 text-xs text-slate-400">Closes {o.close_date}</div>}
