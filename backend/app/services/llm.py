@@ -313,6 +313,26 @@ async def _explain_claude(profile: StartupProfile, opp: dict) -> Explanation:
 
 def _explain_mock(profile: StartupProfile, opp: dict) -> Explanation:
     ind = profile.industry or "your sector"
+    if "SBIR" in (opp.get("program") or ""):
+        return Explanation(
+            why_fit=(
+                f"SBIR/STTR is non-dilutive R&D funding reserved for US small businesses — your size "
+                f"and technology R&D in {ind} are exactly what this program exists for, and this agency "
+                "has repeatedly funded similar technology."
+            ),
+            concerns=(
+                "Requires >50% US ownership, under 500 employees, and the PI majority-employed by the "
+                "company. Majority-VC-owned companies need the agency's VC-participation route."
+            ),
+            verify=(
+                "Check the agency's current open topics for one matching your technology, and confirm "
+                "Phase I award sizes and deadlines on its SBIR page."
+            ),
+            next_steps=(
+                "Register on SAM.gov and SBIR.gov, browse this agency's open/upcoming topics, and "
+                "reach out to the listed topic manager before the next solicitation closes."
+            ),
+        )
     return Explanation(
         why_fit=(
             f"{opp.get('title', 'This program')} ({opp.get('agency', 'federal agency')}) funds work "

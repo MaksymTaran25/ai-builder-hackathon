@@ -1,4 +1,4 @@
-"""Matching pipeline: query plan -> source fan-out -> score -> assemble response."""
+"""Matching pipeline: query plan -> source fan-out -> score -> enrich -> assemble."""
 from __future__ import annotations
 
 import asyncio
@@ -12,11 +12,12 @@ from ..models import (
     Opportunity,
     StartupProfile,
 )
-from . import grants_gov, llm
+from . import grants_gov, llm, sbir, usaspending
 
 log = logging.getLogger(__name__)
 
-MAX_RETURNED = 12
+MAX_RETURNED = 10
+ENRICH_TOP_N = 6  # opportunities that get fetchOpportunity + USAspending history
 
 
 def _parse_date(s: str | None):
@@ -31,10 +32,12 @@ def _parse_date(s: str | None):
 
 
 def _grants_hit_to_opp(hit: dict) -> Opportunity:
+    import html
+
     return Opportunity(
         source="grants_gov",
         source_id=f"gg-{hit.get('id')}",
-        title=hit.get("title") or "",
+        title=html.unescape(hit.get("title") or ""),
         agency=hit.get("agency") or hit.get("agencyCode") or "",
         program=hit.get("number") or "",
         cfda=hit.get("cfdaList") or [],
@@ -49,8 +52,13 @@ def _grants_hit_to_opp(hit: dict) -> Opportunity:
 async def run_match(profile: StartupProfile) -> MatchResponse:
     plan = await llm.plan_queries(profile)
     log.info("query plan: %s", plan.model_dump())
+    topics = plan.research_topics or plan.keywords[:4]
 
-    hits = await grants_gov.search_many(plan.keywords[:6], rows_each=20)
+    hits, sbir_opps = await asyncio.gather(
+        grants_gov.search_many(plan.keywords[:6], rows_each=20),
+        asyncio.to_thread(sbir.pathway_opportunities, topics, profile.state),
+    )
+
     opps = [_grants_hit_to_opp(h) for h in hits]
     kw_by_id = {f"gg-{h.get('id')}": h.get("_matched_keywords", []) for h in hits}
 
@@ -65,23 +73,81 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
         for o in opps
     ]
     scores, overall_note = await llm.score_opportunities(profile, candidates)
-
     for o in opps:
         if o.source_id in scores:
-            o.score, o.fit_tier, _reason = scores[o.source_id]
-    opps.sort(key=lambda o: o.score, reverse=True)
-    opps = [o for o in opps if o.fit_tier != FitTier.not_fit][:MAX_RETURNED]
+            o.score, o.fit_tier, _ = scores[o.source_id]
 
-    # explanations for the ones we return (parallel)
+    # SBIR pathway cards: deterministic score from award history depth
+    for o in sbir_opps:
+        n = o.history.similar_companies if o.history else 0
+        o.score = min(92.0, 68.0 + n / 8)
+        o.fit_tier = FitTier.likely if n >= 40 else FitTier.potential if n >= 8 else FitTier.adjacent
+
+    opps = [o for o in opps if o.fit_tier != FitTier.not_fit]
+    opps.sort(key=lambda o: o.score, reverse=True)
+    merged = _interleave(sbir_opps, opps)[:MAX_RETURNED]
+
+    await _enrich(merged[:ENRICH_TOP_N], profile)
+
     expl = await asyncio.gather(
-        *(llm.explain(profile, {"title": o.title, "agency": o.agency, "program": o.program}) for o in opps),
+        *(
+            llm.explain(
+                profile,
+                {
+                    "title": o.title, "agency": o.agency, "program": o.program,
+                    "summary": o.summary[:600], "close_date": o.close_date,
+                    "award_range": [o.award_floor_usd, o.award_ceiling_usd],
+                },
+            )
+            for o in merged
+        ),
         return_exceptions=True,
     )
-    for o, e in zip(opps, expl):
+    for o, e in zip(merged, expl):
         if not isinstance(e, Exception):
             o.explanation = e
 
-    return MatchResponse(summary=_summarize(opps, overall_note), opportunities=opps)
+    return MatchResponse(summary=_summarize(merged, overall_note), opportunities=merged)
+
+
+def _interleave(sbir_opps: list[Opportunity], grant_opps: list[Opportunity]) -> list[Opportunity]:
+    """SBIR pathway cards rank by score among the grants, but never below #4 if strong."""
+    merged = sorted(sbir_opps + grant_opps, key=lambda o: o.score, reverse=True)
+    return merged
+
+
+async def _enrich(opps: list[Opportunity], profile: StartupProfile) -> None:
+    """Attach award ranges + synopsis (Grants.gov details) and history (USAspending/SBIR)."""
+
+    async def enrich_one(o: Opportunity) -> None:
+        if o.source == "grants_gov":
+            try:
+                d = await grants_gov.fetch_details(o.source_id.removeprefix("gg-"))
+                syn = d.get("synopsis") or {}
+                o.award_floor_usd = _num(syn.get("awardFloor"))
+                o.award_ceiling_usd = _num(syn.get("awardCeiling"))
+                desc = syn.get("synopsisDesc") or ""
+                o.summary = _strip_html(desc)[:900]
+            except Exception:
+                log.exception("fetchOpportunity failed for %s", o.source_id)
+            if o.cfda:
+                o.history = await usaspending.awards_for_cfda(o.cfda, profile.state)
+
+    await asyncio.gather(*(enrich_one(o) for o in opps))
+
+
+def _num(v):
+    try:
+        f = float(str(v).replace(",", ""))
+        return f if f > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _strip_html(s: str) -> str:
+    import re
+
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", s)).strip()
 
 
 def _summarize(opps: list[Opportunity], overall_note: str) -> MatchSummary:
