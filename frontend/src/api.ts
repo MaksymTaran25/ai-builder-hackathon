@@ -57,12 +57,36 @@ export interface Opportunity {
   close_date?: string | null
   award_floor_usd?: number | null
   award_ceiling_usd?: number | null
+  estimated_total_funding_usd?: number | null
+  expected_awards?: number | null
+  cost_sharing?: boolean | null
+  eligibility_flag?: 'ok' | 'verify' | 'likely_ineligible' | null
+  eligible_applicants: string[]
   url?: string | null
   summary: string
   score: number
   fit_tier: FitTier
   explanation?: Explanation | null
   history?: HistoricalStats | null
+}
+
+export interface SimilarCompany {
+  name: string
+  state: string
+  agency: string
+  program: string
+  total_usd: number
+  awards: number
+  latest_year?: number | null
+  example_title: string
+}
+
+export interface AgencyMapEntry {
+  agency: string
+  short: string
+  open_opportunities: number
+  similar_awards_since_2018: number
+  note: string
 }
 
 export interface MatchSummary {
@@ -76,6 +100,16 @@ export interface MatchSummary {
 export interface MatchResponse {
   summary: MatchSummary
   opportunities: Opportunity[]
+  similar_companies: SimilarCompany[]
+  agency_map: AgencyMapEntry[]
+}
+
+export function daysUntil(dateStr?: string | null): number | null {
+  if (!dateStr) return null
+  const m = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})/)
+  const d = m ? new Date(+m[3], +m[1] - 1, +m[2]) : new Date(dateStr)
+  if (isNaN(d.getTime())) return null
+  return Math.round((d.getTime() - Date.now()) / 86400000)
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {

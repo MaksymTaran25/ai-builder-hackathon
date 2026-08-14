@@ -59,5 +59,22 @@ async def fetch_details(opportunity_id: str | int) -> dict[str, Any]:
         return r.json().get("data") or {}
 
 
+async def fetch_details_many(ids: list[str | int]) -> dict[str, dict[str, Any]]:
+    """Fetch full records for many opportunities concurrently. Returns {id: data}."""
+
+    async def one(client: httpx.AsyncClient, oid) -> tuple[str, dict]:
+        r = await client.post(FETCH_URL, json={"opportunityId": int(oid)}, timeout=20)
+        r.raise_for_status()
+        return str(oid), r.json().get("data") or {}
+
+    out: dict[str, dict[str, Any]] = {}
+    async with httpx.AsyncClient() as client:
+        results = await asyncio.gather(*(one(client, i) for i in ids), return_exceptions=True)
+    for res in results:
+        if not isinstance(res, Exception):
+            out[res[0]] = res[1]
+    return out
+
+
 def link_for(opportunity_id: str | int) -> str:
     return OPP_LINK.format(id=opportunity_id)

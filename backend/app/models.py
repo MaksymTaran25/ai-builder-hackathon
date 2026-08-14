@@ -80,6 +80,11 @@ class Opportunity(BaseModel):
     close_date: Optional[str] = None
     award_floor_usd: Optional[float] = None
     award_ceiling_usd: Optional[float] = None
+    estimated_total_funding_usd: Optional[float] = None
+    expected_awards: Optional[int] = None
+    cost_sharing: Optional[bool] = None
+    eligibility_flag: Optional[str] = None  # ok | verify | likely_ineligible
+    eligible_applicants: list[str] = Field(default_factory=list)
     url: Optional[str] = None
     summary: str = ""
     score: float = 0  # 0-100 relevance
@@ -96,6 +101,27 @@ class MatchSummary(BaseModel):
     overall_note: str = ""  # honest "weak federal fit" note for e.g. test case 5
 
 
+class SimilarCompany(BaseModel):
+    name: str
+    state: str = ""
+    agency: str = ""
+    program: str = ""
+    total_usd: float = 0
+    awards: int = 0
+    latest_year: Optional[int] = None
+    example_title: str = ""
+
+
+class AgencyMapEntry(BaseModel):
+    agency: str
+    short: str = ""
+    open_opportunities: int = 0
+    similar_awards_since_2018: int = 0
+    note: str = ""
+
+
 class MatchResponse(BaseModel):
     summary: MatchSummary
     opportunities: list[Opportunity]
+    similar_companies: list[SimilarCompany] = Field(default_factory=list)
+    agency_map: list[AgencyMapEntry] = Field(default_factory=list)

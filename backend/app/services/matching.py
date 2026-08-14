@@ -1,23 +1,28 @@
-"""Matching pipeline: query plan -> source fan-out -> score -> enrich -> assemble."""
+"""Matching pipeline: plan -> fan-out -> prefilter -> enrich -> score -> assemble."""
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
+import re
 from datetime import date, datetime
 
 from ..models import (
+    AgencyMapEntry,
     FitTier,
     MatchResponse,
     MatchSummary,
     Opportunity,
+    SimilarCompany,
     StartupProfile,
 )
-from . import grants_gov, llm, sbir, usaspending, utah
+from . import eligibility, grants_gov, llm, sbir, usaspending, utah
 
 log = logging.getLogger(__name__)
 
+PREFILTER_N = 24   # candidates that get full details fetched
 MAX_RETURNED = 10
-ENRICH_TOP_N = 6  # opportunities that get fetchOpportunity + USAspending history
+HISTORY_TOP_N = 8  # opportunities that get USAspending history
 
 
 def _parse_date(s: str | None):
@@ -32,8 +37,6 @@ def _parse_date(s: str | None):
 
 
 def _grants_hit_to_opp(hit: dict) -> Opportunity:
-    import html
-
     return Opportunity(
         source="grants_gov",
         source_id=f"gg-{hit.get('id')}",
@@ -53,21 +56,30 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
     plan = await llm.plan_queries(profile)
     log.info("query plan: %s", plan.model_dump())
     topics = plan.research_topics or plan.keywords[:4]
+    rd = _has_rd_signal(profile)
 
-    hits, sbir_opps = await asyncio.gather(
+    hits, sbir_opps, similar_rows = await asyncio.gather(
         grants_gov.search_many(plan.keywords[:6], rows_each=20),
         asyncio.to_thread(sbir.pathway_opportunities, topics, profile.state),
+        asyncio.to_thread(sbir.similar_awards, topics, profile.state, 400),
     )
 
     opps = [_grants_hit_to_opp(h) for h in hits]
     kw_by_id = {f"gg-{h.get('id')}": h.get("_matched_keywords", []) for h in hits}
 
+    # Stage A: cheap title-level semantic prefilter so we only fetch details for plausible ones
+    opps = await asyncio.to_thread(_prefilter, profile, opps, kw_by_id)
+
+    # Stage B: full details for the survivors — synopsis, award data, applicant types
+    await _attach_details(opps)
+
+    # Stage C: score with real program text
     candidates = [
         {
             "source_id": o.source_id,
             "title": o.title,
             "agency": o.agency,
-            "summary": o.summary,
+            "summary": o.summary[:500],
             "keywords_matched": kw_by_id.get(o.source_id, []),
         }
         for o in opps
@@ -77,35 +89,46 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
         if o.source_id in scores:
             o.score, o.fit_tier, _ = scores[o.source_id]
 
+    # Stage D: eligibility gate — a program that can't fund a for-profit startup is
+    # adjacent intelligence, not a recommendation
+    for o in opps:
+        if o.eligibility_flag == "likely_ineligible" and o.fit_tier in (FitTier.likely, FitTier.potential):
+            o.fit_tier = FitTier.adjacent
+            o.score = min(o.score, 52.0)
+
     # SBIR pathway cards: deterministic score from award history depth
-    rd = _has_rd_signal(profile)
     for o in sbir_opps:
         n = o.history.similar_companies if o.history else 0
         o.score = min(92.0, 68.0 + n / 8)
         o.fit_tier = FitTier.likely if n >= 40 else FitTier.potential if n >= 8 else FitTier.adjacent
+        o.eligibility_flag = "ok" if rd else "verify"
         if not rd:
             # SBIR funds R&D; a non-R&D business model can't be a likely fit
             o.score = min(o.score, 48.0)
             o.fit_tier = FitTier.adjacent
 
     opps = [o for o in opps if o.fit_tier != FitTier.not_fit]
-    opps.sort(key=lambda o: o.score, reverse=True)
-    merged = _interleave(sbir_opps, opps)[:MAX_RETURNED]
+    merged = sorted(sbir_opps + opps, key=lambda o: o.score, reverse=True)[:MAX_RETURNED]
 
-    if profile.state == "UT":
-        merged.extend(utah.match_programs(profile.description, profile.industry, max_n=3))
+    # An SBIR pathway with deep award history belongs on the map even when posted
+    # grants edge it out on score — it's the canonical non-dilutive route.
+    best_sbir = max(sbir_opps, key=lambda o: o.score, default=None)
+    if (
+        best_sbir
+        and best_sbir not in merged
+        and rd
+        and best_sbir.history
+        and best_sbir.history.similar_companies >= 8
+    ):
+        merged = merged[: MAX_RETURNED - 1] + [best_sbir]
+        merged.sort(key=lambda o: o.score, reverse=True)
 
-    # Honest read when nothing scores strongly (e.g. consumer marketplaces):
-    # judges reward "there probably isn't a strong match" over inflated results.
     if not rd:
-        # Federal grants overwhelmingly fund R&D or public services; without an R&D
-        # component, cap enthusiasm and say so honestly.
         for o in merged:
             if o.fit_tier == FitTier.likely:
                 o.fit_tier = FitTier.potential
                 o.score = min(o.score, 67.0)
 
-    strong = [o for o in merged if o.fit_tier == FitTier.likely]
     top5 = sorted((o.score for o in merged), reverse=True)[:5]
     weak_overall = (
         not rd
@@ -120,8 +143,11 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
             "grant funding as the primary path."
         )
 
-    await _enrich(merged[:ENRICH_TOP_N], profile)
+    if profile.state == "UT":
+        merged.extend(utah.match_programs(profile.description, profile.industry, max_n=3))
 
+    # Stage E: history for the top federal cards + explanations for everything
+    await _attach_history(merged[:HISTORY_TOP_N], profile)
     expl = await asyncio.gather(
         *(
             llm.explain(
@@ -130,6 +156,9 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
                     "title": o.title, "agency": o.agency, "program": o.program,
                     "summary": o.summary[:600], "close_date": o.close_date,
                     "award_range": [o.award_floor_usd, o.award_ceiling_usd],
+                    "cost_sharing": o.cost_sharing,
+                    "eligibility_flag": o.eligibility_flag,
+                    "eligible_applicants": o.eligible_applicants,
                 },
             )
             for o in merged
@@ -140,8 +169,131 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
         if not isinstance(e, Exception):
             o.explanation = e
 
-    return MatchResponse(summary=_summarize(merged, overall_note), opportunities=merged)
+    return MatchResponse(
+        summary=_summarize(merged, overall_note),
+        opportunities=merged,
+        similar_companies=_similar_companies(similar_rows, profile.state),
+        agency_map=_agency_map(merged, similar_rows),
+    )
 
+
+# ------------------------------------------------------------------ stages
+
+def _prefilter(profile: StartupProfile, opps: list[Opportunity], kw_by_id) -> list[Opportunity]:
+    if len(opps) <= PREFILTER_N:
+        return opps
+    from . import embeddings
+
+    query = " ".join(
+        filter(None, [profile.description, profile.industry, " ".join(profile.technology or [])])
+    )
+    try:
+        sims = embeddings.similarities(query, [f"{o.title} — {o.agency}" for o in opps])
+    except Exception:
+        log.exception("prefilter embeddings failed; keeping first N")
+        return opps[:PREFILTER_N]
+    ranked = sorted(
+        zip(opps, sims),
+        key=lambda p: float(p[1]) + 0.02 * len(kw_by_id.get(p[0].source_id, [])),
+        reverse=True,
+    )
+    return [o for o, _ in ranked[:PREFILTER_N]]
+
+
+async def _attach_details(opps: list[Opportunity]) -> None:
+    ids = [o.source_id.removeprefix("gg-") for o in opps if o.source == "grants_gov"]
+    details = await grants_gov.fetch_details_many(ids)
+    for o in opps:
+        d = details.get(o.source_id.removeprefix("gg-"))
+        if not d:
+            continue
+        syn = d.get("synopsis") or {}
+        o.award_floor_usd = _num(syn.get("awardFloor"))
+        o.award_ceiling_usd = _num(syn.get("awardCeiling"))
+        o.estimated_total_funding_usd = _num(syn.get("estimatedFunding"))
+        o.expected_awards = int(_num(syn.get("numberOfAwards")) or 0) or None
+        o.cost_sharing = syn.get("costSharing") in (True, "true", "Yes", "yes")
+        o.summary = _strip_html(syn.get("synopsisDesc") or "")[:900]
+        if syn.get("responseDateStr"):
+            o.close_date = syn["responseDateStr"]
+        flag, descs = eligibility.evaluate(syn.get("applicantTypes") or [])
+        o.eligibility_flag = flag
+        o.eligible_applicants = descs[:6]
+
+
+async def _attach_history(opps: list[Opportunity], profile: StartupProfile) -> None:
+    async def one(o: Opportunity) -> None:
+        if o.source == "grants_gov" and o.cfda:
+            o.history = await usaspending.awards_for_cfda(o.cfda, profile.state)
+
+    await asyncio.gather(*(one(o) for o in opps))
+
+
+# ------------------------------------------------------------------ intelligence
+
+def _similar_companies(rows, state) -> list[SimilarCompany]:
+    by_co: dict[str, dict] = {}
+    for r in rows:
+        c = by_co.setdefault(
+            r["company"],
+            {"state": r["state"], "agency": {}, "total": 0.0, "n": 0, "year": 0, "title": r["title"], "program": f"{r['program']}"},
+        )
+        c["total"] += r["award_amount"] or 0
+        c["n"] += 1
+        c["year"] = max(c["year"], r["award_year"] or 0)
+        c["agency"][r["agency"]] = c["agency"].get(r["agency"], 0) + 1
+    ranked = sorted(
+        by_co.items(),
+        key=lambda kv: (kv[1]["state"] == state, kv[1]["total"]),
+        reverse=True,
+    )
+    out = []
+    for name, c in ranked[:8]:
+        top_agency = max(c["agency"], key=c["agency"].get) if c["agency"] else ""
+        out.append(
+            SimilarCompany(
+                name=(name or "").title(),
+                state=c["state"] or "",
+                agency=sbir._short_agency(top_agency),
+                program=c["program"],
+                total_usd=c["total"],
+                awards=c["n"],
+                latest_year=c["year"] or None,
+                example_title=c["title"][:90],
+            )
+        )
+    return out
+
+
+def _agency_map(opps: list[Opportunity], sbir_rows) -> list[AgencyMapEntry]:
+    entries: dict[str, AgencyMapEntry] = {}
+    for o in opps:
+        if o.source not in ("grants_gov", "sbir") or not o.agency:
+            continue
+        e = entries.setdefault(
+            o.agency, AgencyMapEntry(agency=o.agency, short=sbir._short_agency(o.agency))
+        )
+        e.open_opportunities += 1
+        if not e.note and o.fit_tier == FitTier.likely:
+            e.note = f"e.g. {o.title[:70]}"
+    for r in sbir_rows:
+        if r["agency"] in entries:
+            entries[r["agency"]].similar_awards_since_2018 += 1
+        else:
+            e = entries.setdefault(
+                r["agency"],
+                AgencyMapEntry(agency=r["agency"], short=sbir._short_agency(r["agency"])),
+            )
+            e.similar_awards_since_2018 += 1
+    ranked = sorted(
+        entries.values(),
+        key=lambda e: (e.open_opportunities, e.similar_awards_since_2018),
+        reverse=True,
+    )
+    return [e for e in ranked if e.open_opportunities or e.similar_awards_since_2018 >= 3][:6]
+
+
+# ------------------------------------------------------------------ shared helpers
 
 RD_TERMS = (
     "r&d", "research", "develop", "ai", "machine learning", "sensor", "hardware",
@@ -154,8 +306,6 @@ CONSUMER_TERMS = ("marketplace", "parents", "consumer", "enrichment", "booking",
 def _has_rd_signal(profile: StartupProfile) -> bool:
     """SBIR/most federal grants fund R&D. Consumer businesses without R&D language
     should be told the truth instead of shown inflated matches."""
-    import re
-
     text = " ".join(
         filter(None, [profile.description, profile.industry, " ".join(profile.technology or [])])
     ).lower()
@@ -164,32 +314,6 @@ def _has_rd_signal(profile: StartupProfile) -> bool:
     if consumer:
         return rd_hits >= 3  # a consumer marketplace needs real R&D language to count
     return rd_hits >= 1
-
-
-def _interleave(sbir_opps: list[Opportunity], grant_opps: list[Opportunity]) -> list[Opportunity]:
-    """SBIR pathway cards rank by score among the grants, but never below #4 if strong."""
-    merged = sorted(sbir_opps + grant_opps, key=lambda o: o.score, reverse=True)
-    return merged
-
-
-async def _enrich(opps: list[Opportunity], profile: StartupProfile) -> None:
-    """Attach award ranges + synopsis (Grants.gov details) and history (USAspending/SBIR)."""
-
-    async def enrich_one(o: Opportunity) -> None:
-        if o.source == "grants_gov":
-            try:
-                d = await grants_gov.fetch_details(o.source_id.removeprefix("gg-"))
-                syn = d.get("synopsis") or {}
-                o.award_floor_usd = _num(syn.get("awardFloor"))
-                o.award_ceiling_usd = _num(syn.get("awardCeiling"))
-                desc = syn.get("synopsisDesc") or ""
-                o.summary = _strip_html(desc)[:900]
-            except Exception:
-                log.exception("fetchOpportunity failed for %s", o.source_id)
-            if o.cfda:
-                o.history = await usaspending.awards_for_cfda(o.cfda, profile.state)
-
-    await asyncio.gather(*(enrich_one(o) for o in opps))
 
 
 def _num(v):
@@ -201,9 +325,7 @@ def _num(v):
 
 
 def _strip_html(s: str) -> str:
-    import re
-
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", s)).strip()
+    return html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", s)).strip())
 
 
 def _summarize(opps: list[Opportunity], overall_note: str) -> MatchSummary:

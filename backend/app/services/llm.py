@@ -317,7 +317,11 @@ async def _explain_claude(profile: StartupProfile, opp: dict) -> Explanation:
             "no jargon. Four short sections (2-3 sentences each): why_fit (why this looks "
             "relevant), concerns (what could make them ineligible), verify (what to confirm in "
             "the official listing), next_steps (concrete actions incl. registrations like "
-            "SAM.gov). Never present this as a definitive eligibility determination."
+            "SAM.gov). The opportunity data includes eligibility_flag and eligible_applicants "
+            "parsed from the official listing: if likely_ineligible, be blunt that a for-profit "
+            "company probably can't apply directly and suggest partnering or treating it as "
+            "market intelligence. Mention cost sharing if true. Never present this as a "
+            "definitive eligibility determination."
         ),
         messages=[{
             "role": "user",
@@ -350,15 +354,34 @@ def _explain_mock(profile: StartupProfile, opp: dict) -> Explanation:
                 "reach out to the listed topic manager before the next solicitation closes."
             ),
         )
+    flag = opp.get("eligibility_flag")
+    eligible = opp.get("eligible_applicants") or []
+    if flag == "likely_ineligible":
+        who = ", ".join(eligible[:4]) or "government and nonprofit entities"
+        concerns = (
+            f"Heads up: the listed eligible applicants are {who} — a for-profit company is "
+            "likely NOT directly eligible. The realistic play is partnering with an eligible "
+            "applicant (a university or municipality) or treating this as market intelligence."
+        )
+    elif flag == "verify":
+        concerns = (
+            "Eligibility is not explicit for for-profit companies ('Others' category) — read the "
+            "Additional Information on Eligibility section before investing time."
+        )
+    else:
+        concerns = (
+            "Confirm the small-business size standard, >50% US ownership, and any prior-award "
+            "requirements."
+        )
+        if opp.get("cost_sharing"):
+            concerns += " Note: this program requires cost sharing — you must contribute matching funds."
+
     return Explanation(
         why_fit=(
             f"{opp.get('title', 'This program')} ({opp.get('agency', 'federal agency')}) funds work "
             f"aligned with {ind}. Your profile matches its topical focus."
         ),
-        concerns=(
-            "Eligibility rules (small-business size standards, US ownership, prior awards) and "
-            "cost-sharing requirements may exclude some applicants."
-        ),
+        concerns=concerns,
         verify=(
             "Read the official synopsis for eligibility categories, deadlines, and award size; "
             "confirm your size standard and registration status."
