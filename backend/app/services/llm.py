@@ -229,7 +229,9 @@ async def score_opportunities(
             return await _score_claude(profile, candidates)
         except Exception:
             log.exception("Claude scoring failed; using mock")
-    return _score_mock(candidates), ""
+    import asyncio
+
+    return await asyncio.to_thread(_score_mock, profile, candidates), ""
 
 
 async def _score_claude(profile, candidates) -> tuple[dict[str, tuple[float, FitTier, str]], str]:
@@ -260,12 +262,27 @@ async def _score_claude(profile, candidates) -> tuple[dict[str, tuple[float, Fit
     return {i.source_id: (i.score, i.fit_tier, i.one_line_reason) for i in out.items}, out.overall_note
 
 
-def _score_mock(candidates) -> dict[str, tuple[float, FitTier, str]]:
+def _score_mock(profile: StartupProfile, candidates) -> dict[str, tuple[float, FitTier, str]]:
+    """Semantic scoring with local embeddings — no API key needed."""
+    from . import embeddings
+
+    query = " ".join(
+        filter(None, [profile.description, profile.industry, " ".join(profile.technology or [])])
+    )
+    texts = [f"{c['title']} — {c.get('agency', '')}" for c in candidates]
+    try:
+        sims = embeddings.similarities(query, texts)
+    except Exception:
+        log.exception("embedding scoring failed; flat fallback")
+        sims = [0.55] * len(candidates)
+
     scored = {}
-    for c in candidates:
+    for c, sim in zip(candidates, sims):
         n_kw = len(c.get("keywords_matched") or [])
-        score = min(95.0, 35.0 + 18.0 * n_kw)
-        if score >= 70:
+        sem01 = max(0.0, min(1.0, (float(sim) - 0.40) / 0.30))
+        blend = 0.75 * sem01 + 0.25 * min(1.0, n_kw / 3)
+        score = min(round(100 * blend, 1), 96.0)
+        if score >= 68:
             tier = FitTier.likely
         elif score >= 55:
             tier = FitTier.potential
@@ -273,8 +290,7 @@ def _score_mock(candidates) -> dict[str, tuple[float, FitTier, str]]:
             tier = FitTier.adjacent
         else:
             tier = FitTier.not_fit
-        reason = f"Matched {n_kw} of your search themes" if n_kw else "Weak topical overlap"
-        scored[c["source_id"]] = (score, tier, reason)
+        scored[c["source_id"]] = (score, tier, f"Semantic similarity {sim:.2f}, {n_kw} theme matches")
     return scored
 
 

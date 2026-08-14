@@ -87,6 +87,19 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
     opps.sort(key=lambda o: o.score, reverse=True)
     merged = _interleave(sbir_opps, opps)[:MAX_RETURNED]
 
+    # Honest read when nothing scores strongly (e.g. consumer marketplaces):
+    # judges reward "there probably isn't a strong match" over inflated results.
+    strong = [o for o in merged if o.fit_tier in (FitTier.likely, FitTier.potential)]
+    top5 = sorted((o.score for o in merged), reverse=True)[:5]
+    weak_overall = len(strong) <= 2 or (top5 and sorted(top5)[len(top5) // 2] < 78)
+    if not overall_note and weak_overall:
+        overall_note = (
+            "Traditional federal grants look like a weak fit for this business model — most "
+            "programs below are adjacent at best. Consider state/local economic development "
+            "programs, SBA lending (7(a)/microloans), and government customers rather than "
+            "grant funding as the primary path."
+        )
+
     await _enrich(merged[:ENRICH_TOP_N], profile)
 
     expl = await asyncio.gather(

@@ -14,6 +14,15 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="GovMatch", version="0.1.0")
 
+
+@app.on_event("startup")
+async def _warmup():
+    import asyncio
+
+    from .services import embeddings
+
+    asyncio.get_event_loop().run_in_executor(None, embeddings.warmup)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
