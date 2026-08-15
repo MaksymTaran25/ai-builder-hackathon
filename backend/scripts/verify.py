@@ -86,8 +86,9 @@ def run_case(name: str, text: str) -> dict:
 
     check("responds", bool(opps), "empty opportunity list")
     check(f"latency {dt:.1f}s < 15s", dt < 15)
-    scores = [o["score"] for o in fed]
-    check("sorted by score", scores == sorted(scores, reverse=True))
+    tier_rank = {"likely_fit": 3, "potential_fit": 2, "adjacent": 1, "not_a_fit": 0}
+    keys = [(tier_rank[o["fit_tier"]], o["score"]) for o in fed]
+    check("sorted by tier then score", keys == sorted(keys, reverse=True))
     check(
         "no ineligible likely-fits",
         all(o["fit_tier"] != "likely_fit" or o.get("eligibility_flag") in ("ok", "verify", None) for o in fed),

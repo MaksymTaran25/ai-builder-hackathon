@@ -123,7 +123,10 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
             o.fit_tier = FitTier.adjacent
 
     opps = [o for o in opps if o.fit_tier != FitTier.not_fit]
-    merged = sorted(sbir_opps + opps, key=lambda o: o.score, reverse=True)[:MAX_RETURNED]
+    tier_rank = {FitTier.likely: 3, FitTier.potential: 2, FitTier.adjacent: 1, FitTier.not_fit: 0}
+    merged = sorted(
+        sbir_opps + opps, key=lambda o: (tier_rank[o.fit_tier], o.score), reverse=True
+    )[:MAX_RETURNED]
 
     # An SBIR pathway with deep award history belongs on the map even when posted
     # grants edge it out on score — it's the canonical non-dilutive route.
@@ -148,7 +151,7 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
     weak_overall = (
         not rd
         or len([o for o in merged if o.fit_tier in (FitTier.likely, FitTier.potential)]) <= 2
-        or (top5 and sorted(top5)[len(top5) // 2] < 78)
+        or (top5 and sorted(top5)[len(top5) // 2] < 70)
     )
     if not overall_note and weak_overall:
         overall_note = (

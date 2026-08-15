@@ -13,7 +13,7 @@ from strawberry.scalars import JSON
 from strawberry.schema.config import StrawberryConfig
 
 from . import models
-from .services import llm, matching, sbir, store
+from .services import llm, matching, person as person_svc, sbir, store
 
 
 
@@ -199,6 +199,17 @@ class Query:
         import asyncio
 
         return await asyncio.to_thread(store.stored_award_history, min(limit, 100))
+
+    @strawberry.field
+    async def match_person(self, person: JSON) -> JSON:
+        """JSON in -> JSON out for external processes: accepts a person/company
+        document in any reasonable shape, normalizes it, runs the full matching
+        pipeline against the database, returns the complete result as JSON."""
+        profile = await person_svc.to_profile(dict(person))
+        result = await matching.run_match(profile)
+        out = result.model_dump()
+        out["normalized_profile"] = profile.model_dump()
+        return out
 
     # ---- live pipeline ----
 
