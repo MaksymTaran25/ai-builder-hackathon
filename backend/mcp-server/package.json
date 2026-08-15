@@ -1,0 +1,19 @@
+{
+  "name": "mcp-website-scraper",
+  "version": "1.0.0",
+  "description": "MCP Server that recursively scrapes all pages and subpages of a given URL and returns structured JSON data.",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "mcp-scraper": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "scrape": "node standalone.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "axios": "^1.8.1",
+    "cheerio": "^1.0.0"
+  }
+}
