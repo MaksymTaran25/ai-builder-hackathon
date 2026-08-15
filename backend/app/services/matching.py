@@ -42,6 +42,7 @@ def _grants_hit_to_opp(hit: dict) -> Opportunity:
         source_id=f"gg-{hit.get('id')}",
         title=html.unescape(hit.get("title") or ""),
         agency=hit.get("agency") or hit.get("agencyCode") or "",
+        agency_code=hit.get("agencyCode") or "",
         program=hit.get("number") or "",
         cfda=hit.get("cfdaList") or [],
         status=hit.get("oppStatus") or "",
@@ -91,10 +92,22 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
 
     # Stage D: eligibility gate — a program that can't fund a for-profit startup is
     # adjacent intelligence, not a recommendation
+    profile_text = " ".join(
+        filter(None, [profile.description, profile.industry, " ".join(profile.technology or [])])
+    ).lower()
     for o in opps:
         if o.eligibility_flag == "likely_ineligible" and o.fit_tier in (FitTier.likely, FitTier.potential):
             o.fit_tier = FitTier.adjacent
             o.score = min(o.score, 52.0)
+        elif _is_foreign_affairs(o) and o.fit_tier in (FitTier.likely, FitTier.potential):
+            # embassy/public-diplomacy grants fund programming abroad, not US startup R&D,
+            # however topical their titles sound
+            o.fit_tier = FitTier.adjacent
+            o.score = min(o.score, 50.0)
+        elif _sector_mismatch(o, profile_text) and o.fit_tier == FitTier.likely:
+            # related technology but a different customer sector: one notch down
+            o.fit_tier = FitTier.potential
+            o.score -= 15.0
 
     # SBIR pathway cards: deterministic score from award history depth
     for o in sbir_opps:
@@ -297,6 +310,31 @@ def _agency_map(opps: list[Opportunity], sbir_rows) -> list[AgencyMapEntry]:
 
 
 # ------------------------------------------------------------------ shared helpers
+
+FOREIGN_AFFAIRS_MARKERS = (
+    "embassy", "consulate", "u.s. mission", "public diplomacy", "american spaces",
+    "department of state", "agency for international development",
+)
+
+
+def _is_foreign_affairs(o: Opportunity) -> bool:
+    blob = f"{o.agency} {o.title} {o.summary[:300]}".lower()
+    return (
+        any(m in blob for m in FOREIGN_AFFAIRS_MARKERS)
+        or o.agency_code.upper().startswith(("DOS", "USAID"))
+    )
+
+
+OIL_GAS_MARKERS = ("oil and gas", "petroleum", "fossil energy", "oilfield", "produced water")
+
+
+def _sector_mismatch(o: Opportunity, profile_text: str) -> bool:
+    """Candidate is an oil & gas program but the company never mentions that sector."""
+    cand = f"{o.title} {o.summary[:300]}".lower()
+    return any(m in cand for m in OIL_GAS_MARKERS) and not any(
+        m in profile_text for m in OIL_GAS_MARKERS + ("oil", "gas", "energy")
+    )
+
 
 RD_TERMS = (
     "r&d", "research", "develop", "ai", "machine learning", "sensor", "hardware",

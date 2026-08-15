@@ -73,6 +73,7 @@ class Opportunity(BaseModel):
     source_id: str
     title: str
     agency: str = ""
+    agency_code: str = ""
     program: str = ""
     status: str = ""  # posted | forecasted | open solicitation ...
     cfda: list[str] = Field(default_factory=list)  # ALN numbers -> USAspending join key

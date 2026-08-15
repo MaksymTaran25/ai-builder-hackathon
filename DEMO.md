@@ -7,9 +7,9 @@ cd backend && uv run uvicorn app.main:app --port 8000
 # terminal 2
 cd frontend && npm run dev
 ```
-Open http://localhost:5173. If we have an Anthropic key by then: `export ANTHROPIC_API_KEY=...`
-before starting the backend (upgrades scoring + explanations automatically; check
-http://localhost:8000/api/health shows `"llm_provider": "anthropic"`).
+Open http://localhost:5173. **No API keys — that's deliberate.** All intelligence runs
+locally (embeddings + rules over official government data). Sanity check before judging:
+`cd backend && uv run python scripts/verify.py` — must end `0 failed`.
 
 ## The story
 
@@ -51,8 +51,10 @@ builds with SBIR pathways, similar companies, and Utah programs.
 ## Q&A ammo
 - **Data**: Grants.gov search2 + fetchOpportunity (live), SBIR bulk awards 2018+ (39.8K, local
   FTS), USAspending v2 by CFDA (live), curated Utah programs. All official, all free, no keys.
-- **AI layer**: Claude (claude-opus-5) for extraction/scoring/explanations when a key is set;
-  local embeddings (bge-small) + rules otherwise — same UX, graceful degradation, demo can't die.
+- **AI layer**: fully local — semantic embeddings (bge-small) + a startup→government
+  translation table + deterministic gates (eligibility codes, R&D requirement, foreign-affairs
+  filter). **Zero API keys, zero per-request cost, zero data leaves the machine, works on
+  hostile wifi.** An LLM seam exists in the code if a team ever wants it; we chose not to need it.
 - **Eligibility**: parsed from the official applicantTypes codes on each listing (small business
   = code 23). Framed as guidance, never as a determination.
 - **Why not RAG over everything?** 2-4 sources done deeply beats shallow everything — per the

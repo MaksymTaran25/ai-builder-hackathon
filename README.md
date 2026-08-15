@@ -50,18 +50,16 @@ npm install
 npm run dev        # http://localhost:5173, proxies /api to :8000
 ```
 
-### LLM
+### Intelligence layer — no API keys, by design
 
-Works out of the box with **no API key**: local embeddings (fastembed) + a deterministic
-translation table handle extraction, scoring, and explanations.
+Everything runs locally: fastembed embeddings (bge-small) for semantic matching, a curated
+startup→government translation table, and deterministic gates parsed from official data
+(applicant-type eligibility codes, an R&D-requirement check for SBIR, a foreign-affairs
+program filter). Zero keys, zero per-request cost, nothing leaves the machine, and results
+are identical on every run — what you rehearse is what judges see.
 
-For full intelligence (better extraction, analyst-grade scoring and eligibility explanations),
-set:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-# optional: export LLM_MODEL=claude-opus-5   (default)
-```
+(`services/llm.py` contains a dormant Claude seam behind `ANTHROPIC_API_KEY` for anyone who
+wants to experiment later; the shipped product does not use it.)
 
 ## Data sources
 
