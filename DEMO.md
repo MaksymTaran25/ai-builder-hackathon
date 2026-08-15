@@ -1,16 +1,29 @@
 # Demo script (~3 min)
 
 ## Setup (before judges arrive)
+
+**One command tells you if everything is wired:**
 ```bash
-# terminal 1
-cd backend && uv run uvicorn app.main:app --port 8000
-# terminal 2
-cd frontend && npm run dev
+bash scripts/check_stack.sh        # must end "All 6 checks passed — demo ready."
 ```
-Open http://localhost:5173. **No API keys — that's deliberate.** First backend start
-loads the MLX model (~30s) — start it before judges arrive; `/api/health` shows `mlx:` when ready. All intelligence runs
-locally (embeddings + rules over official government data). Sanity check before judging:
+
+The backend (Server 1) runs as a launchd service — it starts at login and restarts itself if
+it dies. First start after boot takes ~30s (local LLM model load). Useful commands:
+```bash
+bash backend/scripts/install_service.sh status    # is Server 1 up, which judge
+bash backend/scripts/install_service.sh restart   # after code changes
+bash backend/scripts/install_service.sh logs      # tail the log
+```
+Frontend: `cd frontend && npm run dev -- --port 5174`. Server 2 (Vibha's matcher, if demoed):
+`cd server2 && uvicorn app.main:app --port 8002` — its `/health` must say `GovMatch Server 1`,
+not `mock_data`.
+
+**No API keys — that's deliberate.** All intelligence runs locally. Full regression battery:
 `cd backend && uv run python scripts/verify.py` — must end `0 failed`.
+
+**Rehearse each demo case once before judging** — the LLM's verdicts are cached, so a
+rehearsed case builds in ~1s on stage; an unrehearsed one takes ~14s (still fine — the loading
+card explains it's a local model reading every program).
 
 ## The story
 
