@@ -82,7 +82,7 @@ function Step({ n, label, active, done }: { n: number; label: string; active: bo
 // step label + roughly how long it takes; the LLM read is the long one
 const STEPS: [string, number][] = [
   ['Searching live federal opportunities', 1200],
-  ['Reading each program against your company — a local model, no API calls', 5500],
+  ['Reading every program against your company — a local model, no API calls', 10000],
   ['Pulling award history', 800],
   ['Ranking your matches', 800],
 ]

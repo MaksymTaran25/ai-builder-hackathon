@@ -20,11 +20,10 @@ from . import eligibility, grants_gov, llm, local_llm, sbir, store, usaspending,
 
 log = logging.getLogger(__name__)
 
-PREFILTER_N = 24   # candidates that get full details fetched
-LLM_JUDGE_N = 16   # top candidates the local LLM reads in full
-MAX_RETURNED = 20  # ceiling; the real cut is by fit (see _select)
+PREFILTER_N = 40   # candidates that get full details fetched
+LLM_JUDGE_N = 40   # the LLM reads every candidate that gets details — nothing shown unvetted
 MIN_SHOWN = 5      # below this many real fits, adjacent programs fill in
-HISTORY_TOP_N = 10 # opportunities that get USAspending history
+HISTORY_TOP_N = 40 # opportunities that get USAspending history
 
 _TIER_ORDER = [FitTier.not_fit, FitTier.adjacent, FitTier.potential, FitTier.likely]
 
@@ -38,11 +37,11 @@ _BANDS = {
 
 
 def _select(ranked: list[Opportunity]) -> list[Opportunity]:
-    """How many to show is decided by fit, not a constant: every likely/potential fit
-    (up to MAX_RETURNED); adjacent programs only fill in when there are fewer than
-    MIN_SHOWN real fits, so a thin case is never padded to look rich."""
+    """Show everything that is a real fit — every likely and potential match, no cap.
+    Adjacent programs only fill in when there are fewer than MIN_SHOWN real fits, so
+    a thin case is never padded to look rich."""
     real = [o for o in ranked if o.fit_tier in (FitTier.likely, FitTier.potential)]
-    out = real[:MAX_RETURNED]
+    out = list(real)
     if len(out) < MIN_SHOWN:
         adjacent = [o for o in ranked if o.fit_tier == FitTier.adjacent]
         out = out + adjacent[: MIN_SHOWN - len(out)]
@@ -102,7 +101,7 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
     rd = _has_rd_signal(profile)
 
     hits, sbir_opps, similar_rows = await asyncio.gather(
-        grants_gov.search_many(plan.keywords[:6], rows_each=20),
+        grants_gov.search_many(plan.keywords[:8], rows_each=30),
         asyncio.to_thread(sbir.pathway_opportunities, topics, profile.state),
         asyncio.to_thread(sbir.similar_awards, topics, profile.state, 400),
     )
