@@ -1,298 +1,341 @@
 """
-Opportunity Matcher & Ranking Engine
-====================================
-Evaluates startup query characteristics (technology, domain, capital requirements,
-team size, geography) against government opportunity solicitations and historical
-award models to produce scored, categorized, and tailored advisor results.
+Weighted Matching & Scoring Engine
+==================================
+Implements a multi-factor weighted scoring algorithm evaluating startup characteristics
+against federal opportunity requirements, producing normalized match scores (0.0 to 1.0),
+fit tiers, and specific advisor rationale.
 """
 
 import re
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 from .models import (
-    StartupQueryRequest,
-    OpportunityItem,
-    RankedOpportunity,
-    StrategyItem,
-    TimelineStep,
-    SummaryMetrics,
+    StartupProfile,
+    Opportunity,
+    MatchResultItem,
+    QuerySummary,
     OpportunityQueryResponse,
 )
+from .llm import BaseLLMClient, get_llm_client
 
 
-def _extract_query_tokens(startup: StartupQueryRequest) -> List[str]:
+# -----------------------------------------------------------------------------
+# Configurable Factor Weights (Must sum to 1.0)
+# -----------------------------------------------------------------------------
+
+DEFAULT_WEIGHTS: Dict[str, float] = {
+    "industry": 0.25,
+    "technology": 0.25,
+    "rd_alignment": 0.15,
+    "size_eligibility": 0.10,
+    "funding_alignment": 0.10,
+    "customer_alignment": 0.10,
+    "product_maturity": 0.05,
+}
+
+
+def _tokenize(text: str) -> List[str]:
+    """Helper to extract lowercased alphanumeric tokens from text."""
+    if not text:
+        return []
+    return re.findall(r"\b[a-z0-9\-]+\b", text.lower())
+
+
+def _calculate_overlap_ratio(source_items: List[str], target_items: List[str]) -> float:
+    """Calculates keyword/token overlap similarity between two lists."""
+    if not target_items:
+        return 0.5  # Neutral if opportunity has no target constraints
+    if not source_items:
+        return 0.0
+
+    source_tokens = set()
+    for item in source_items:
+        source_tokens.update(_tokenize(item))
+
+    target_tokens = set()
+    for item in target_items:
+        target_tokens.update(_tokenize(item))
+
+    if not target_tokens:
+        return 0.5
+
+    intersection = source_tokens.intersection(target_tokens)
+    return min(len(intersection) / len(target_tokens), 1.0)
+
+
+def evaluate_single_opportunity(
+    profile: StartupProfile,
+    opp: Opportunity,
+    weights: Dict[str, float],
+    normalized_keywords: List[str]
+) -> Tuple[float, str, List[str], List[str], List[str]]:
     """
-    Extracts normalized search & analysis tokens from both the narrative and structured fields.
+    Computes a weighted match score (0.0 to 1.0), fit tier, and generated explanations
+    for a single candidate opportunity.
     """
-    raw_texts: List[str] = []
-    if startup.story:
-        raw_texts.append(startup.story)
-    if startup.industry:
-        raw_texts.append(startup.industry)
-    if startup.technology:
-        raw_texts.append(startup.technology)
-    if startup.rd_activities:
-        raw_texts.append(startup.rd_activities)
-    if startup.target_customers:
-        raw_texts.append(startup.target_customers)
-    if startup.location:
-        raw_texts.append(startup.location)
+    why_match: List[str] = []
+    potential_concerns: List[str] = []
+    next_steps: List[str] = []
 
-    combined = " ".join(raw_texts).lower()
-    # Normalize alphanumeric words
-    tokens = re.findall(r"\b[a-z0-9\-]+\b", combined)
-    return list(set(tokens))
+    # Aggregate all profile text tokens
+    profile_all_text = " ".join([
+        profile.company_name or "",
+        profile.description or "",
+        " ".join(profile.industry),
+        " ".join(profile.technology),
+        " ".join(profile.rd_activities),
+        " ".join(profile.target_customers),
+        " ".join(profile.use_of_funds),
+        profile.location or "",
+        " ".join(normalized_keywords),
+    ]).lower()
 
-
-def _calculate_score_and_fit(
-    startup: StartupQueryRequest,
-    opp: OpportunityItem,
-    query_tokens: List[str]
-) -> Tuple[int, str, str, List[str], List[str]]:
-    """
-    Calculates match score (0-100), fit level label, fit level code,
-    and tailored why_fit & concerns lists.
-    """
-    score = 0
-    why_fit: List[str] = []
-    concerns: List[str] = []
-
-    # 1. Base keyword / domain overlap
-    opp_keywords_set = set(k.lower() for k in opp.keywords)
-    matched_keywords = [t for t in query_tokens if t in opp_keywords_set]
-    keyword_overlap_ratio = len(matched_keywords) / max(len(opp_keywords_set), 1)
-
-    # 2. Domain & Technology Alignment
-    industry_text = (startup.industry or "").lower()
-    tech_text = (startup.technology or "").lower()
-    story_text = (startup.story or "").lower()
-
-    # Check AI / Software match
-    has_ai = any(w in tech_text or w in story_text for w in ["ai", "artificial intelligence", "machine learning", "nlp", "software", "saas"])
-    if has_ai and any("ai" in t.lower() or "software" in t.lower() or "nlp" in t.lower() for t in opp.target_technologies):
-        score += 35
-        why_fit.append("AI technology & software algorithm alignment")
-
-    # Check Healthcare / Clinical match
-    has_health = any(w in industry_text or w in story_text for w in ["health", "healthcare", "nurse", "nursing", "hospital", "clinical", "biomedical"])
-    if has_health and any("health" in d.lower() or "nursing" in d.lower() or "clinical" in d.lower() or "biomedical" in d.lower() for d in opp.target_domains):
-        score += 35
-        why_fit.append("Direct healthcare workflow & clinical impact alignment")
-    elif not has_health and any("health" in d.lower() for d in opp.target_domains):
-        # Healthcare grant but startup is not healthcare
-        concerns.append("Solicitation targets healthcare and clinical domains")
-
-    # Check Energy / Physical Sciences mismatch (for DOE test case)
-    is_energy_opp = any("energy" in d.lower() or "grid" in d.lower() or "physics" in d.lower() for d in opp.target_domains)
-    if is_energy_opp and not any(w in industry_text or w in story_text for w in ["energy", "grid", "clean tech", "physics"]):
-        score = max(score - 40, 15)
-        concerns.append("Domain mismatch: solicitation prioritizes computational energy physics and grid modeling")
-        concerns.append("Requires multi-institution national laboratory consortium partnership")
-
-    # 3. Small Business / Size Eligibility
-    emp = startup.employees or 15
-    if emp < 500:
-        score += 15
-        why_fit.append(f"Small business qualifying criteria satisfied ({emp} FTE < 500 cap)")
+    # 1. Industry Alignment (Weight: 0.25)
+    industry_overlap = _calculate_overlap_ratio(profile.industry + normalized_keywords, opp.target_industries)
+    text_industry_matches = [ind for ind in opp.target_industries if any(w in profile_all_text for w in _tokenize(ind))]
+    if text_industry_matches:
+        industry_score = max(industry_overlap, min(len(text_industry_matches) / max(len(opp.target_industries), 1), 1.0))
     else:
-        concerns.append(f"Employee headcount ({emp}) approaches or exceeds standard small business cap")
+        industry_score = industry_overlap
 
-    # 4. R&D and Commercial Stage
-    has_rd = bool(startup.rd_activities) or "r&d" in story_text or "development" in story_text
-    if has_rd and opp.category in ["R&D Grant", "Translational Health", "Defense SBIR"]:
-        score += 10
-        why_fit.append("Active technical R&D and commercialization potential")
+    if industry_score >= 0.4:
+        matched_str = ", ".join(text_industry_matches[:3]) if text_industry_matches else "relevant sector"
+        why_match.append(f"Strong industry alignment with {opp.agency_short} priority areas ({matched_str})")
+    elif industry_score < 0.2:
+        potential_concerns.append(f"Opportunity focuses primarily on {', '.join(opp.target_industries[:2])} domain")
 
-    # 5. Local State Precedent
-    loc = (startup.location or "").lower()
-    if loc and loc in opp.historical_intelligence.local_recipients.lower():
-        why_fit.append(f"Demonstrated state precedent ({opp.historical_intelligence.local_recipients})")
-
-    # 6. Specific Solicitation Concerns
-    if opp.agency_short == "NSF":
-        concerns.append("Verify current solicitation requirements for mandatory Project Pitch")
-        concerns.append("Confirm company eligibility and active SAM.gov UEI registration")
-    elif opp.agency_short in ["NIH / HHS", "NIH"]:
-        concerns.append("Requires IRB/human subject research protocol review for hospital pilot telemetry data")
-        concerns.append("NIH standard review cycle takes 5–6 months before award issuance")
-    elif opp.agency_short == "ARPA-H":
-        concerns.append("Very competitive national sprint solicitation with aggressive milestone deliverables")
-        concerns.append("Must demonstrate order-of-magnitude reduction in clinical friction")
-    elif "VA" in opp.agency_short:
-        concerns.append("Requires FedRAMP or VA Enterprise Cloud ATO (Authority to Operate) roadmap")
-        concerns.append("Strict government contracting compliance (FAR clauses)")
-    elif "DoD" in opp.agency_short:
-        concerns.append(f"Short deadline remaining ({opp.days_left} days left)")
-        concerns.append("Dual-use narrative must emphasize military hospital operational utility")
-
-    # Cap score between 0 and 99
-    score = min(max(score, 20), 96)
-
-    # If it matched the known mock exact IDs, align with realistic target ranges
-    if opp.id == "nsf-seed-fund-2026":
-        score = 92
-    elif opp.id == "nih-hhs-sbir-2026":
-        score = 89
-    elif opp.id == "arpa-h-sprint-2026":
-        score = 81
-    elif opp.id == "va-nurse-procure-2026":
-        score = 76
-    elif opp.id == "onc-healthit-2026":
-        score = 68
-    elif opp.id == "dod-dha-sbir-2026":
-        score = 63
-    elif opp.id == "doe-hpc-energy-2026":
-        score = 28
-
-    # Assign fit levels
-    if score >= 85:
-        fit_level = "Likely Fit"
-        fit_level_code = "likely"
-    elif score >= 70:
-        fit_level = "Potential Fit — Verify Eligibility"
-        fit_level_code = "potential"
-    elif score >= 50:
-        fit_level = "Adjacent Opportunity"
-        fit_level_code = "adjacent"
+    # 2. Technology Alignment (Weight: 0.25)
+    tech_overlap = _calculate_overlap_ratio(profile.technology + normalized_keywords, opp.target_technologies)
+    text_tech_matches = [tech for tech in opp.target_technologies if any(w in profile_all_text for w in _tokenize(tech))]
+    if text_tech_matches:
+        tech_score = max(tech_overlap, min(len(text_tech_matches) / max(len(opp.target_technologies), 1), 1.0))
     else:
-        fit_level = "Probably Not a Fit"
-        fit_level_code = "unlikely"
+        tech_score = tech_overlap
 
-    return score, fit_level, fit_level_code, why_fit, concerns
+    if tech_score >= 0.35:
+        matched_tech_str = ", ".join(text_tech_matches[:3]) if text_tech_matches else "core software/deep tech"
+        why_match.append(f"Technical stack matches solicitation requirements ({matched_tech_str})")
+    elif tech_score < 0.2:
+        potential_concerns.append(f"Requires specialized technology focus ({', '.join(opp.target_technologies[:2])})")
+
+    # 3. R&D Alignment (Weight: 0.15)
+    has_rd = bool(profile.rd_activities) or any(
+        w in profile_all_text for w in [
+            "r&d", "development", "research", "algorithm", "prototype", "pilot",
+            "analytics", "sensor", "telemetry", "innovation", "engineering", "system"
+        ]
+    )
+    if opp.requires_active_rd:
+        if has_rd:
+            rd_score = 1.0
+            why_match.append("Active technical R&D milestones satisfy federal grant unproven innovation criteria")
+        else:
+            rd_score = 0.6
+            potential_concerns.append("Solicitation mandates unproven technical research and scientific hurdle validation")
+    else:
+        rd_score = 0.9  # Procurement or non-R&D grants don't penalize
+
+    # 4. Company Size & Eligibility (Weight: 0.10)
+    emp = profile.employees or 15
+    if opp.max_employees_limit:
+        if emp <= opp.max_employees_limit:
+            size_score = 1.0
+            why_match.append(f"Small business qualifying criteria satisfied ({emp} FTE <= {opp.max_employees_limit} cap)")
+        else:
+            size_score = 0.0
+            potential_concerns.append(f"Headcount ({emp} FTE) exceeds program cap ({opp.max_employees_limit})")
+    else:
+        size_score = 1.0
+
+    # 5. Funding Needs Alignment (Weight: 0.10)
+    funding_score = 0.8  # Default high-neutral overlap
+    needed_min = float(profile.funding_needed_min) if profile.funding_needed_min else None
+    needed_max = float(profile.funding_needed_max) if profile.funding_needed_max else None
+
+    if needed_min is not None and needed_max is not None:
+        # Check if ranges overlap
+        if opp.funding_max >= needed_min and opp.funding_min <= needed_max:
+            funding_score = 1.0
+            why_match.append(f"Award size (${opp.funding_min:,}–${opp.funding_max:,}) fits requested capital range (${int(needed_min):,}–${int(needed_max):,})")
+        elif opp.funding_max < needed_min:
+            funding_score = 0.5
+            potential_concerns.append(f"Maximum award (${opp.funding_max:,}) is below desired minimum capital (${int(needed_min):,})")
+        else:
+            funding_score = 0.7
+    else:
+        why_match.append(f"Non-dilutive funding pool (${opp.funding_min:,}–${opp.funding_max:,}) matches typical early-stage needs")
+
+    # 6. Customer Persona / Domain Alignment (Weight: 0.10)
+    customer_overlap = _calculate_overlap_ratio(profile.target_customers, opp.target_customers)
+    text_customer_matches = [cust for cust in opp.target_customers if any(w in profile_all_text for w in _tokenize(cust))]
+    if text_customer_matches:
+        customer_score = max(customer_overlap, min(len(text_customer_matches) / max(len(opp.target_customers), 1), 1.0))
+        why_match.append(f"Target customer segment aligns with agency users ({', '.join(text_customer_matches[:2])})")
+    else:
+        customer_score = 0.5
+
+    # 7. Product Maturity & Stage (Weight: 0.05)
+    maturity = (profile.product_maturity or "commercial").lower()
+    if opp.opportunity_type in ["procurement", "ota_contract"]:
+        if "commercial" in maturity or "pilot" in maturity:
+            stage_score = 1.0
+            why_match.append("Commercial/pilot maturity is well-suited for federal procurement and OTA transition")
+        else:
+            stage_score = 0.5
+            potential_concerns.append("Procurement contracts prefer working commercial solutions over early prototypes")
+    else:
+        stage_score = 0.9
+
+    # Local State Precedent Bonus
+    if profile.location and opp.local_recipients_note and profile.location.lower() in opp.local_recipients_note.lower():
+        why_match.append(f"State precedent demonstrated ({opp.local_recipients_note})")
+
+    # Calculate Weighted Total Score
+    raw_score = (
+        industry_score * weights["industry"]
+        + tech_score * weights["technology"]
+        + rd_score * weights["rd_alignment"]
+        + size_score * weights["size_eligibility"]
+        + funding_score * weights["funding_alignment"]
+        + customer_score * weights["customer_alignment"]
+        + stage_score * weights["product_maturity"]
+    )
+
+    # Domain mismatch hard penalty (e.g. Nuclear/Livestock for AI healthcare)
+    is_domain_mismatch = (
+        ("nuclear" in opp.target_industries or "dairy" in opp.target_industries or "plasma physics" in opp.target_industries)
+        and not any(w in profile_all_text for w in ["nuclear", "dairy", "farming", "plasma", "livestock"])
+    )
+    if is_domain_mismatch:
+        raw_score = min(raw_score, 0.28)
+        potential_concerns.append("Severe domain mismatch: solicitation is dedicated exclusively to unrelated physical/agricultural science")
+
+    # Round to 2 decimal places and clamp
+    score = round(max(min(raw_score, 0.98), 0.15), 2)
+
+    # Determine Fit Tier
+    if score >= 0.80:
+        fit_tier = "likely_fit"
+    elif score >= 0.65:
+        fit_tier = "potential_fit"
+    elif score >= 0.45:
+        fit_tier = "adjacent"
+    else:
+        fit_tier = "unlikely"
+
+    # Default fallback bullets if empty
+    if not why_match:
+        why_match.append("Startup profile meets baseline federal program qualification parameters")
+    if not potential_concerns:
+        potential_concerns.append("Verify specific annual solicitation instructions and deadlines on SAM.gov")
+
+    # Standard next steps customized by opportunity type
+    if opp.opportunity_type == "sbir_grant":
+        next_steps = [
+            f"Review official {opp.agency_short} solicitation topic guidance",
+            "Verify active organization registration in SAM.gov and SBIR.gov",
+            "Prepare 3-page Project Pitch / Specific Aims summary for Program Manager review",
+            f"Assemble Phase I technical proposal before {opp.deadline}"
+        ]
+    elif opp.opportunity_type == "procurement":
+        next_steps = [
+            "Review Sources Sought Notice and Statement of Work specifications",
+            "Audit cloud cybersecurity compliance (FedRAMP / ATO roadmap readiness)",
+            "Schedule discovery briefing with regional agency innovation office",
+            f"Submit commercial capability statement prior to {opp.deadline}"
+        ]
+    elif opp.opportunity_type == "ota_contract":
+        next_steps = [
+            "Draft 4-page Executive Abstract detailing 10x performance improvement",
+            "Prepare prototype demonstration telemetry or hospital pilot metrics",
+            "Engage ARPA-H / DARPA Program Manager during open office hours",
+            f"Submit sprint proposal package before {opp.deadline}"
+        ]
+    else:
+        next_steps = [
+            f"Examine {opp.program} eligibility guidelines in Grants.gov",
+            "Secure letters of collaboration or support from industry/clinical partners",
+            f"Submit application bundle before {opp.deadline}"
+        ]
+
+    return score, fit_tier, why_match, potential_concerns, next_steps
 
 
-def rank_and_score_opportunities(
-    startup: StartupQueryRequest,
-    opportunities: List[OpportunityItem]
+def match_and_rank_opportunities(
+    profile: StartupProfile,
+    candidates: List[Opportunity],
+    llm_client: Optional[BaseLLMClient] = None,
+    weights: Optional[Dict[str, float]] = None
 ) -> OpportunityQueryResponse:
     """
-    Main matching pipeline:
-    1. Extracts query signals from startup payload.
-    2. Scores every candidate opportunity.
-    3. Produces enriched RankedOpportunity items.
-    4. Sorts results by match score descending.
-    5. Builds top 3 strategic recommendations and timeline.
-    6. Assembles OpportunityQueryResponse.
+    Main matching pipeline orchestrating:
+    1. Semantic concept extraction (via LLM or deterministic fallback).
+    2. Weighted scoring and rationale generation across candidate opportunities.
+    3. Descending sort by match_score.
+    4. Metric summary compilation.
     """
-    query_tokens = _extract_query_tokens(startup)
-    ranked_list: List[RankedOpportunity] = []
+    client = llm_client or get_llm_client()
+    active_weights = weights or DEFAULT_WEIGHTS
 
-    for opp in opportunities:
-        score, fit_level, fit_level_code, why_fit, concerns = _calculate_score_and_fit(
-            startup, opp, query_tokens
+    # Step 1: Normalize profile concepts
+    normalization_result = client.normalize_profile(profile)
+    normalized_keywords = normalization_result.get("normalized_keywords", [])
+
+    # Step 2: Score all candidate opportunities
+    results: List[MatchResultItem] = []
+    agencies_set = set()
+    total_funding_min = 0
+    total_funding_max = 0
+
+    for opp in candidates:
+        score, fit_tier, why_match, potential_concerns, next_steps = evaluate_single_opportunity(
+            profile=profile,
+            opp=opp,
+            weights=active_weights,
+            normalized_keywords=normalized_keywords
         )
 
-        ranked_list.append(
-            RankedOpportunity(
+        # Optional LLM explanation refinement
+        enriched = client.enrich_explanation(
+            profile=profile,
+            opportunity=opp,
+            base_why=why_match,
+            base_concerns=potential_concerns,
+            base_next_steps=next_steps
+        )
+
+        results.append(
+            MatchResultItem(
                 id=opp.id,
-                title=opp.title,
-                program_code=opp.program_code,
+                program=opp.program,
                 agency=opp.agency,
-                agency_short=opp.agency_short,
-                category=opp.category,
+                opportunity_type=opp.opportunity_type,
                 match_score=score,
-                fit_level=fit_level,
-                fit_level_code=fit_level_code,
-                potential_value=opp.potential_value,
+                fit_tier=fit_tier,
+                funding_min=opp.funding_min,
+                funding_max=opp.funding_max,
                 deadline=opp.deadline,
-                days_left=opp.days_left,
-                closing_soon=opp.days_left <= 90,
-                summary=opp.summary,
-                why_fit=why_fit if why_fit else ["Startup meets core federal program eligibility parameters"],
-                concerns=concerns if concerns else ["Verify specific annual solicitation instructions"],
-                historical_intelligence=opp.historical_intelligence,
-                detailed_overview=opp.detailed_overview,
-                historical_awards=opp.historical_awards,
+                why_match=enriched.get("why_match", why_match),
+                potential_concerns=enriched.get("potential_concerns", potential_concerns),
+                next_steps=enriched.get("next_steps", next_steps),
             )
         )
 
-    # Sort descending by match score
-    ranked_list.sort(key=lambda x: x.match_score, reverse=True)
+        agencies_set.add(opp.agency_short)
+        total_funding_min += opp.funding_min
+        total_funding_max += opp.funding_max
 
-    # Build Top 3 Strategy Recommendations
-    strategy_recommendations = [
-        StrategyItem(
-            rank="01",
-            opportunity_id="nsf-seed-fund-2026",
-            title="NSF America's Seed Fund",
-            agency="National Science Foundation",
-            potential_value="$250K–$1.5M",
-            rationale="Best alignment with your R&D and commercialization stage.",
-            tag="Highest Technical Alignment"
-        ),
-        StrategyItem(
-            rank="02",
-            opportunity_id="nih-hhs-sbir-2026",
-            title="NIH / HHS (NINR Clinical AI)",
-            agency="National Institutes of Health",
-            potential_value="$400K–$2.2M",
-            rationale="Strong healthcare alignment; verify solicitation-specific eligibility.",
-            tag="Largest Healthcare Pool"
-        ),
-        StrategyItem(
-            rank="03",
-            opportunity_id="arpa-h-sprint-2026",
-            title="ARPA-H & Federal SBIR/STTR",
-            agency="ARPA-H / Federal Seed Track",
-            potential_value="$500K–$3.0M",
-            rationale="Potential source of non-dilutive R&D funding with accelerated review.",
-            tag="Accelerated Sprint Path"
-        ),
-    ]
+    # Step 3: Strictly sort in descending order of match_score
+    results.sort(key=lambda item: item.match_score, reverse=True)
 
-    # Build 90-Day Execution Timeline
-    sequential_timeline = [
-        TimelineStep(
-            month="AUGUST",
-            phase="Phase 1: Readiness & Discovery",
-            action="Research eligibility & entity registrations",
-            deliverables=[
-                "Confirm SAM.gov UEI and CAGE active status",
-                "Submit NSF Project Pitch (3 pages) in Research.gov",
-                "Draft NIH Specific Aims page for Program Officer check-in"
-            ],
-            status="current"
-        ),
-        TimelineStep(
-            month="SEPTEMBER",
-            phase="Phase 2: Proposal Drafting & Letters of Support",
-            action="Prepare materials & clinical pilot metrics",
-            deliverables=[
-                "Gather 2 partner hospital nursing leadership letters of intent",
-                "Finalize NSF 15-page project description & commercialization plan",
-                "Submit ARPA-H BAA 4-page Executive Abstract"
-            ],
-            status="upcoming"
-        ),
-        TimelineStep(
-            month="OCTOBER",
-            phase="Phase 3: Formal Federal Submission",
-            action="Submit strongest opportunity & prep secondary application",
-            deliverables=[
-                "Submit NSF Phase I SBIR full proposal before deadline",
-                "Complete NIH Fast-Track package via ASSIST portal",
-                "Initiate VA VHA Innovation discovery briefing call"
-            ],
-            status="upcoming"
-        )
-    ]
-
-    # Calculate summary metrics
-    agencies_set = set(opp.agency_short for opp in ranked_list)
-    closing_soon_count = sum(1 for opp in ranked_list if opp.days_left <= 90)
-
-    summary_metrics = SummaryMetrics(
-        total_opportunities=len(ranked_list),
-        potential_funding_text="$3.2M+",
-        relevant_agencies=len(agencies_set),
-        closing_within_90_days=closing_soon_count
+    # Step 4: Summary calculations
+    summary = QuerySummary(
+        opportunity_count=len(results),
+        agencies=sorted(list(agencies_set)),
+        potential_funding_min=total_funding_min,
+        potential_funding_max=total_funding_max,
     )
 
     return OpportunityQueryResponse(
-        status="success",
-        query_startup_name=startup.name or "Your Startup",
-        total_opportunities=len(ranked_list),
-        summary_metrics=summary_metrics,
-        ranked_opportunities=ranked_list,
-        strategy_recommendations=strategy_recommendations,
-        sequential_timeline=sequential_timeline
+        opportunities=results,
+        summary=summary
     )
