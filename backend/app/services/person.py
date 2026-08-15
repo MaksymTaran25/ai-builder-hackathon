@@ -11,7 +11,7 @@ from typing import Any, Optional
 from ..models import StartupProfile
 from . import llm
 
-TEXT_KEYS = ("description", "about", "bio", "summary", "company_description", "pitch", "what_we_do")
+TEXT_KEYS = ("description", "about", "story", "bio", "summary", "company_description", "pitch", "what_we_do")
 INDUSTRY_KEYS = ("industry", "sector", "vertical", "market")
 STATE_KEYS = ("state", "location", "region", "city", "address", "based_in", "headquarters")
 EMPLOYEE_KEYS = ("employees", "team_size", "headcount", "number_employees", "num_employees", "size")

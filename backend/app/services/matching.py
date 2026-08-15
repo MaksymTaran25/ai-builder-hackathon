@@ -226,6 +226,7 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
                     "cost_sharing": o.cost_sharing,
                     "eligibility_flag": o.eligibility_flag,
                     "eligible_applicants": o.eligible_applicants,
+                    "llm_reason": o.llm_reason,
                 },
             )
             for o in merged

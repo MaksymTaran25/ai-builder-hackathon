@@ -378,11 +378,25 @@ def _explain_mock(profile: StartupProfile, opp: dict) -> Explanation:
         if opp.get("cost_sharing"):
             concerns += " Note: this program requires cost sharing — you must contribute matching funds."
 
+    llm_reason = (opp.get("llm_reason") or "").strip()
+    if llm_reason:
+        why = llm_reason
+    else:
+        agency = opp.get("agency") or "This federal agency"
+        summ = (opp.get("summary") or "").strip()
+        first = re.split(r"(?<=[.!?])\s+", summ)[0][:220] if summ else ""
+        elig = opp.get("eligibility_flag")
+        tail = (
+            " Small businesses are on the official applicant list." if elig == "ok"
+            else " Eligibility for for-profits should be confirmed in the listing." if elig == "verify"
+            else ""
+        )
+        why = (
+            f"{agency} program in your {ind} space. " + (first + " " if first else "") +
+            f"Matched on semantic similarity to your description.{tail}"
+        ).strip()
     return Explanation(
-        why_fit=(
-            f"{opp.get('title', 'This program')} ({opp.get('agency', 'federal agency')}) funds work "
-            f"aligned with {ind}. Your profile matches its topical focus."
-        ),
+        why_fit=why,
         concerns=concerns,
         verify=(
             "Read the official synopsis for eligibility categories, deadlines, and award size; "
