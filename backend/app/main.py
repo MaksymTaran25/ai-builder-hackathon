@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from .gql import router as graphql_router
 from .models import ExtractResponse, MatchResponse, StartupProfile
 from .services import llm, matching
 
@@ -34,6 +35,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(graphql_router)  # GraphQL at /graphql (GraphiQL explorer in browser)
 
 
 class ExtractRequest(BaseModel):

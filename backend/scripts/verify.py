@@ -92,6 +92,28 @@ for name, text in CASES.items():
         failed += 1
         print(f"  FAIL  {name} crashed: {e}")
 
+# GraphQL parity: same profile through /graphql must equal REST
+print("\n== graphql parity ==")
+gq = """query M($p: StartupProfileInput!) { match(profile: $p) {
+  summary { high_potential } opportunities { source_id fit_tier score } } }"""
+p_hc = post("/api/profile/extract", {"text": CASES["healthcare"]})["profile"]
+rest = post("/api/match", p_hc)
+graph = post("/graphql", {"query": gq, "variables": {"p": p_hc}})
+if graph.get("errors"):
+    check("graphql executes", False, str(graph["errors"])[:120])
+else:
+    gm = graph["data"]["match"]
+    check("graphql executes", True)
+    check(
+        "graphql == rest (ids + tiers)",
+        [(o["source_id"], o["fit_tier"]) for o in gm["opportunities"]]
+        == [(o["source_id"], o["fit_tier"]) for o in rest["opportunities"]],
+    )
+    check("graphql tier values match REST format", all(
+        o["fit_tier"] in ("likely_fit", "potential_fit", "adjacent", "not_a_fit")
+        for o in gm["opportunities"]
+    ))
+
 # concurrency: 3 parallel matches must all succeed
 print("\n== concurrency (3 parallel) ==")
 import concurrent.futures as cf

@@ -46,6 +46,9 @@ uv run python -m app.ingest.sbir_ingest 2018
 uv run uvicorn app.main:app --port 8000
 ```
 
+API surface: REST (`/api/*`) **and GraphQL** (`/graphql` — open it in a browser for the
+interactive GraphiQL explorer). The frontend queries GraphQL first and falls back to REST.
+
 Frontend (Node 20+):
 
 ```bash

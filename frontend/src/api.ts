@@ -122,9 +122,64 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return r.json()
 }
 
+// ---- GraphQL layer (primary transport; REST kept as automatic fallback) ----
+
+const PROFILE_FIELDS = `description industry technology city state employees revenue_usd
+  capital_raised_usd funding_stage rd_activities product_maturity target_customers
+  capital_need_min_usd capital_need_max_usd use_of_funds`
+
+const OPPORTUNITY_FIELDS = `source source_id title agency agency_code program status cfda
+  open_date close_date award_floor_usd award_ceiling_usd estimated_total_funding_usd
+  expected_awards cost_sharing eligibility_flag eligible_applicants url summary score fit_tier
+  explanation { why_fit concerns verify next_steps }
+  history { similar_companies total_awarded_usd median_award_usd in_state_recipients
+    sample_recipients { name agency program amount year } }`
+
+const EXTRACT_QUERY = `query Extract($text: String!) {
+  extract_profile(text: $text) {
+    profile { ${PROFILE_FIELDS} }
+    followups { field question }
+  }
+}`
+
+const MATCH_QUERY = `query Match($profile: StartupProfileInput!) {
+  match(profile: $profile) {
+    summary { high_potential total_potential_value_usd agencies closing_within_90_days overall_note }
+    opportunities { ${OPPORTUNITY_FIELDS} }
+    similar_companies { name state agency program total_usd awards latest_year example_title }
+    agency_map { agency short open_opportunities similar_awards_since_2018 note }
+  }
+}`
+
+async function gql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+  const r = await fetch('/graphql', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  })
+  if (!r.ok) throw new Error(`graphql failed: ${r.status}`)
+  const d = await r.json()
+  if (d.errors?.length) throw new Error(`graphql: ${d.errors[0].message}`)
+  return d.data
+}
+
 export const api = {
-  extract: (text: string) => post<ExtractResponse>('/api/profile/extract', { text }),
-  match: (profile: StartupProfile) => post<MatchResponse>('/api/match', profile),
+  extract: async (text: string): Promise<ExtractResponse> => {
+    try {
+      const d = await gql<{ extract_profile: ExtractResponse }>(EXTRACT_QUERY, { text })
+      return d.extract_profile
+    } catch {
+      return post<ExtractResponse>('/api/profile/extract', { text })
+    }
+  },
+  match: async (profile: StartupProfile): Promise<MatchResponse> => {
+    try {
+      const d = await gql<{ match: MatchResponse }>(MATCH_QUERY, { profile })
+      return d.match
+    } catch {
+      return post<MatchResponse>('/api/match', profile)
+    }
+  },
 }
 
 export const fmtUSD = (n?: number | null) => {

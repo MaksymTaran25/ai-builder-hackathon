@@ -54,6 +54,8 @@ builds with SBIR pathways, similar companies, and Utah programs.
   translation table + deterministic gates (eligibility codes, R&D requirement, foreign-affairs
   filter). **Zero API keys, zero per-request cost, zero data leaves the machine, works on
   hostile wifi.** An LLM seam exists in the code if a team ever wants it; we chose not to need it.
+- **Stack**: MongoDB (NoSQL document store, weighted text index) + GraphQL API (`/graphql`,
+  GraphiQL explorer works live) with REST fallback. FastAPI + React/TypeScript.
 - **Eligibility**: parsed from the official applicantTypes codes on each listing (small business
   = code 23). Framed as guidance, never as a determination.
 - **Why not RAG over everything?** 2-4 sources done deeply beats shallow everything — per the
