@@ -45,12 +45,11 @@ Export the report, hand it to your accountant. This is a funding analyst for eve
 today it's grants and SBIR; the same architecture extends to loans, procurement, and incentives."
 
 ## If wifi dies
-Everything except Grants.gov/USAspending is local (SBIR SQLite + embeddings). The map still
+Everything except Grants.gov/USAspending is local (SBIR in MongoDB + embeddings). The map still
 builds with SBIR pathways, similar companies, and Utah programs.
 
 ## Q&A ammo
-- **Data**: Grants.gov search2 + fetchOpportunity (live), SBIR bulk awards 2018+ (39.8K, local
-  FTS), USAspending v2 by CFDA (live), curated Utah programs. All official, all free, no keys.
+- **Data**: Grants.gov search2 + fetchOpportunity (live), SBIR bulk awards 2018+ (39.8K, local MongoDB text index), USAspending v2 by CFDA (live), curated Utah programs. All official, all free, no keys.
 - **AI layer**: fully local — semantic embeddings (bge-small) + a startup→government
   translation table + deterministic gates (eligibility codes, R&D requirement, foreign-affairs
   filter). **Zero API keys, zero per-request cost, zero data leaves the machine, works on

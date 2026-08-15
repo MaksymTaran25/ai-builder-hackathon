@@ -1,31 +1,20 @@
-"""Load the SBIR.gov bulk award CSV into SQLite with an FTS5 index.
+"""Load the SBIR.gov bulk award CSV into MongoDB with a weighted text index.
 
 Usage: uv run python -m app.ingest.sbir_ingest [min_year]
 Source file: data/raw/sbir_award_data.csv (from data.www.sbir.gov)
+Target: mongodb://localhost:27017 (override with MONGO_URL), db govmatch.
 """
 from __future__ import annotations
 
 import csv
-import sqlite3
+import os
 import sys
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parents[2] / "data" / "gov.db"
-CSV_PATH = Path(__file__).resolve().parents[2] / "data" / "raw" / "sbir_award_data.csv"
+from pymongo import ASCENDING, TEXT, MongoClient
 
-SCHEMA = """
-DROP TABLE IF EXISTS sbir_awards;
-CREATE TABLE sbir_awards (
-    id INTEGER PRIMARY KEY,
-    company TEXT, title TEXT, agency TEXT, branch TEXT, phase TEXT, program TEXT,
-    topic_code TEXT, award_year INTEGER, award_amount REAL,
-    employees INTEGER, city TEXT, state TEXT, abstract TEXT
-);
-DROP TABLE IF EXISTS sbir_fts;
-CREATE VIRTUAL TABLE sbir_fts USING fts5(
-    title, abstract, company, content='sbir_awards', content_rowid='id'
-);
-"""
+CSV_PATH = Path(__file__).resolve().parents[2] / "data" / "raw" / "sbir_award_data.csv"
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 
 
 def _num(s: str) -> float:
@@ -37,8 +26,10 @@ def _num(s: str) -> float:
 
 def main(min_year: int = 2018) -> None:
     csv.field_size_limit(10_000_000)
-    con = sqlite3.connect(DB_PATH)
-    con.executescript(SCHEMA)
+    client = MongoClient(MONGO_URL)
+    col = client.govmatch.sbir_awards
+    col.drop()
+
     n = 0
     with open(CSV_PATH, encoding="utf-8", errors="replace", newline="") as f:
         reader = csv.reader(f)
@@ -53,28 +44,33 @@ def main(min_year: int = 2018) -> None:
                 continue
             if year < min_year:
                 continue
-            batch.append((
-                row[0], row[1], row[2], row[3], row[4], row[5], row[15],
-                year, _num(row[17]), int(_num(row[22])), row[26], row[27], row[29],
-            ))
+            batch.append({
+                "company": row[0], "title": row[1], "agency": row[2], "branch": row[3],
+                "phase": row[4], "program": row[5], "topic_code": row[15],
+                "award_year": year, "award_amount": _num(row[17]),
+                "employees": int(_num(row[22])), "city": row[26], "state": row[27],
+                "abstract": row[29],
+            })
             if len(batch) >= 5000:
-                _flush(con, batch); n += len(batch); batch = []
+                col.insert_many(batch); n += len(batch); batch = []
         if batch:
-            _flush(con, batch); n += len(batch)
-    con.execute("INSERT INTO sbir_fts(rowid, title, abstract, company) SELECT id, title, abstract, company FROM sbir_awards")
-    con.commit()
-    print(f"ingested {n} awards (year >= {min_year}) into {DB_PATH}")
-    for row in con.execute("SELECT state, COUNT(*) c FROM sbir_awards GROUP BY state ORDER BY c DESC LIMIT 5"):
-        print("  ", row)
-    con.close()
+            col.insert_many(batch); n += len(batch)
 
-
-def _flush(con: sqlite3.Connection, batch: list) -> None:
-    con.executemany(
-        "INSERT INTO sbir_awards (company,title,agency,branch,phase,program,topic_code,award_year,award_amount,employees,city,state,abstract) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        batch,
+    col.create_index(
+        [("title", TEXT), ("abstract", TEXT), ("company", TEXT)],
+        weights={"title": 4, "abstract": 2, "company": 1},
+        name="sbir_text",
     )
+    col.create_index([("state", ASCENDING)])
+    col.create_index([("agency", ASCENDING), ("award_year", ASCENDING)])
+
+    print(f"ingested {n} awards (year >= {min_year}) into {MONGO_URL} govmatch.sbir_awards")
+    for row in col.aggregate([
+        {"$group": {"_id": "$state", "c": {"$sum": 1}}},
+        {"$sort": {"c": -1}}, {"$limit": 5},
+    ]):
+        print("  ", (row["_id"], row["c"]))
+    client.close()
 
 
 if __name__ == "__main__":

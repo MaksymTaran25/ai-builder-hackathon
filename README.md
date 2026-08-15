@@ -15,7 +15,7 @@ Founder text
    ↓  query planning   (startup language → agencies / program keywords / NAICS / SBIR topics)
    ↓  fan-out
         ├─ Grants.gov search2 API (live current + forecasted opportunities)
-        ├─ SBIR.gov bulk awards, 2018+ (SQLite + FTS5, 39.8K awards) → "SBIR pathway" cards
+        ├─ SBIR.gov bulk awards, 2018+ (MongoDB, weighted text index, 39.8K awards) → "SBIR pathway" cards
         ├─ USAspending API v2 (award history by CFDA/ALN for each matched grant)
         └─ Curated Utah state programs (the Utah advantage)
    ↓  scoring (Claude analyst pass, or local embeddings fallback — bge-small, no key needed)
@@ -30,12 +30,16 @@ government-as-customer paths.
 
 ## Run it
 
-Backend (Python 3.12, [uv](https://docs.astral.sh/uv/)):
+Backend (Python 3.12, [uv](https://docs.astral.sh/uv/), MongoDB):
 
 ```bash
+# one-time: local MongoDB (no Atlas, no auth — stays fully offline)
+brew tap mongodb/brew && brew trust mongodb/brew && brew install mongodb-community
+brew services start mongodb/brew/mongodb-community
+
 cd backend
 uv sync
-# one-time: download SBIR bulk data (~350MB) and build the local index
+# one-time: download SBIR bulk data (~350MB) and build the text index
 curl -L -o data/raw/sbir_award_data.csv "https://data.www.sbir.gov/awarddatapublic/award_data.csv"
 uv run python -m app.ingest.sbir_ingest 2018
 # run
@@ -66,7 +70,7 @@ wants to experiment later; the shipped product does not use it.)
 | Source | How we use it |
 |---|---|
 | Grants.gov `search2` + `fetchOpportunity` | live opportunity search; award floor/ceiling + synopsis |
-| SBIR.gov bulk award data (official CSV) | 39.8K awards since 2018, FTS-indexed; powers "similar companies funded" and SBIR pathway cards (live API is down for maintenance) |
+| SBIR.gov bulk award data (official CSV) | 39.8K awards since 2018 in MongoDB (weighted text index); powers "similar companies funded" and SBIR pathway cards (live API is down for maintenance) |
 | USAspending.gov API v2 | historical awards by CFDA program: recipients, totals, medians, in-state counts |
 | Curated Utah programs | state-level grants/loans/tax credits/training funds |
 

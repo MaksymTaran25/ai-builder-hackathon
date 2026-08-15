@@ -1,24 +1,30 @@
-"""SBIR/STTR award history from the local SQLite cache (bulk data, 2018+).
+"""SBIR/STTR award history from local MongoDB (official bulk data, 2018+).
 
 The live SBIR API is down for maintenance (Aug 2026), so awards come from the
 official bulk CSV ingested by app.ingest.sbir_ingest. Used two ways:
 1. history stats for "who got funded for similar technology"
 2. synthesized "SBIR/STTR pathway" opportunity cards per top funding agency
+
+If mongod is unreachable, every function degrades to empty results — the app
+keeps working without the SBIR slice (same contract as a live-API outage).
 """
 from __future__ import annotations
 
 import logging
+import os
 import re
-import sqlite3
 import statistics
-from pathlib import Path
+import threading
 from typing import Optional
 
 from ..models import HistoricalStats, Opportunity
 
 log = logging.getLogger(__name__)
 
-DB_PATH = Path(__file__).resolve().parents[2] / "data" / "gov.db"
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+
+_client = None
+_lock = threading.Lock()
 
 AGENCY_SBIR_LINKS = {
     "Department of Health and Human Services": "https://seed.nih.gov/",
@@ -33,55 +39,66 @@ AGENCY_SBIR_LINKS = {
 }
 
 
-def _connect() -> Optional[sqlite3.Connection]:
-    if not DB_PATH.exists():
-        return None
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
+def _col():
+    global _client
+    if _client is None:
+        with _lock:
+            if _client is None:
+                from pymongo import MongoClient
+
+                _client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=1500)
+    return _client.govmatch.sbir_awards
 
 
-def _fts_query(topics: list[str]) -> str:
-    """Build an OR-of-phrases FTS5 query, sanitized."""
+_PROJECTION = {
+    "_id": 0, "company": 1, "title": 1, "agency": 1, "phase": 1,
+    "program": 1, "award_year": 1, "award_amount": 1, "state": 1,
+    "city": 1, "score": {"$meta": "textScore"},
+}
+
+
+def similar_awards(topics: list[str], state: Optional[str], limit: int = 400) -> list[dict]:
+    """OR-of-phrases retrieval: one $text query per topic phrase (quoted = exact
+    phrase match), merged by max score. Mirrors the tight topical semantics we
+    want — a single stray word shouldn't match."""
     phrases = []
     for t in topics:
-        clean = re.sub(r'[^a-zA-Z0-9 ]', ' ', t).strip()
-        if clean:
-            phrases.append(f'"{clean}"')
-    return " OR ".join(phrases)
-
-
-def similar_awards(topics: list[str], state: Optional[str], limit: int = 400) -> list[sqlite3.Row]:
-    con = _connect()
-    if con is None or not topics:
+        clean = re.sub(r"[^a-zA-Z0-9 ]", " ", t).strip().lower()
+        if clean and clean not in phrases:
+            phrases.append(clean)
+    if not phrases:
         return []
-    q = _fts_query(topics)
-    if not q:
-        return []
+
+    merged: dict[tuple, dict] = {}
+    per_phrase = max(80, limit // len(phrases))
     try:
-        rows = con.execute(
-            """SELECT a.company, a.title, a.agency, a.phase, a.program, a.award_year,
-                      a.award_amount, a.state, a.city
-               FROM sbir_fts f JOIN sbir_awards a ON a.id = f.rowid
-               WHERE sbir_fts MATCH ?
-               ORDER BY rank LIMIT ?""",
-            (q, limit),
-        ).fetchall()
-        return rows
-    except sqlite3.OperationalError:
-        log.exception("FTS query failed: %s", q)
+        col = _col()
+        for p in phrases:
+            for r in (
+                col.find({"$text": {"$search": f'"{p}"'}}, _PROJECTION)
+                .sort([("score", {"$meta": "textScore"})])
+                .limit(per_phrase)
+            ):
+                key = (r.get("company"), r.get("title"), r.get("award_year"))
+                if key not in merged or r["score"] > merged[key]["score"]:
+                    merged[key] = r
+    except Exception:
+        log.exception("Mongo text search failed (is mongod running?)")
         return []
-    finally:
-        con.close()
+    return sorted(merged.values(), key=lambda r: r["score"], reverse=True)[:limit]
 
 
 def history_for_topics(topics: list[str], state: Optional[str]) -> Optional[HistoricalStats]:
     rows = similar_awards(topics, state)
     if not rows:
         return None
-    amounts = [r["award_amount"] for r in rows if r["award_amount"]]
-    in_state = [r for r in rows if state and r["state"] == state]
-    ordered = in_state + [r for r in rows if not (state and r["state"] == state)]
+    return _stats(rows, state)
+
+
+def _stats(rows: list[dict], state: Optional[str], agency_short: Optional[str] = None) -> HistoricalStats:
+    amounts = [r["award_amount"] for r in rows if r.get("award_amount")]
+    in_state = [r for r in rows if state and r.get("state") == state]
+    ordered = in_state + [r for r in rows if not (state and r.get("state") == state)]
     return HistoricalStats(
         similar_companies=len({r["company"] for r in rows}),
         total_awarded_usd=float(sum(amounts)),
@@ -89,11 +106,11 @@ def history_for_topics(topics: list[str], state: Optional[str]) -> Optional[Hist
         in_state_recipients=len({r["company"] for r in in_state}),
         sample_recipients=[
             {
-                "name": (r["company"] or "").title(),
-                "agency": _short_agency(r["agency"]),
-                "amount": r["award_amount"],
-                "year": r["award_year"],
-                "program": f"{r['program']} {r['phase']}".strip(),
+                "name": (r.get("company") or "").title(),
+                "agency": agency_short or _short_agency(r.get("agency") or ""),
+                "amount": r.get("award_amount"),
+                "year": r.get("award_year"),
+                "program": f"{r.get('program', '')} {r.get('phase', '')}".strip(),
             }
             for r in ordered[:5]
         ],
@@ -122,17 +139,14 @@ def pathway_opportunities(topics: list[str], state: Optional[str], max_agencies:
     rows = similar_awards(topics, state)
     if not rows:
         return []
-    by_agency: dict[str, list[sqlite3.Row]] = {}
+    by_agency: dict[str, list[dict]] = {}
     for r in rows:
-        by_agency.setdefault(r["agency"], []).append(r)
+        by_agency.setdefault(r.get("agency") or "", []).append(r)
     ranked = sorted(by_agency.items(), key=lambda kv: len(kv[1]), reverse=True)[:max_agencies]
 
     opps: list[Opportunity] = []
     for agency, ars in ranked:
-        amounts = [r["award_amount"] for r in ars if r["award_amount"]]
-        in_state = [r for r in ars if state and r["state"] == state]
         short = _short_agency(agency)
-        ordered = in_state + [r for r in ars if not (state and r["state"] == state)]
         opps.append(
             Opportunity(
                 source="sbir",
@@ -146,22 +160,7 @@ def pathway_opportunities(topics: list[str], state: Optional[str], max_agencies:
                     f"{short} has made {len(ars)} SBIR/STTR awards since 2018 for technology similar "
                     f"to yours. Phase I typically ~$150K-$300K, Phase II up to ~$1M-$2M, non-dilutive."
                 ),
-                history=HistoricalStats(
-                    similar_companies=len({r["company"] for r in ars}),
-                    total_awarded_usd=float(sum(amounts)),
-                    median_award_usd=float(statistics.median(amounts)) if amounts else 0,
-                    in_state_recipients=len({r["company"] for r in in_state}),
-                    sample_recipients=[
-                        {
-                            "name": (r["company"] or "").title(),
-                            "agency": short,
-                            "amount": r["award_amount"],
-                            "year": r["award_year"],
-                            "program": f"{r['program']} {r['phase']}".strip(),
-                        }
-                        for r in ordered[:5]
-                    ],
-                ),
+                history=_stats(ars, state, agency_short=short),
             )
         )
     return opps
