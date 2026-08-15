@@ -21,9 +21,10 @@ from . import eligibility, grants_gov, llm, local_llm, sbir, store, usaspending,
 log = logging.getLogger(__name__)
 
 PREFILTER_N = 24   # candidates that get full details fetched
-LLM_JUDGE_N = 12   # top candidates the local LLM reads in full
-MAX_RETURNED = 10
-HISTORY_TOP_N = 8  # opportunities that get USAspending history
+LLM_JUDGE_N = 16   # top candidates the local LLM reads in full
+MAX_RETURNED = 20  # ceiling; the real cut is by fit (see _select)
+MIN_SHOWN = 5      # below this many real fits, adjacent programs fill in
+HISTORY_TOP_N = 10 # opportunities that get USAspending history
 
 _TIER_ORDER = [FitTier.not_fit, FitTier.adjacent, FitTier.potential, FitTier.likely]
 
@@ -36,6 +37,18 @@ _BANDS = {
 }
 
 
+def _select(ranked: list[Opportunity]) -> list[Opportunity]:
+    """How many to show is decided by fit, not a constant: every likely/potential fit
+    (up to MAX_RETURNED); adjacent programs only fill in when there are fewer than
+    MIN_SHOWN real fits, so a thin case is never padded to look rich."""
+    real = [o for o in ranked if o.fit_tier in (FitTier.likely, FitTier.potential)]
+    out = real[:MAX_RETURNED]
+    if len(out) < MIN_SHOWN:
+        adjacent = [o for o in ranked if o.fit_tier == FitTier.adjacent]
+        out = out + adjacent[: MIN_SHOWN - len(out)]
+    return out
+
+
 def _band_score(tier: FitTier, raw: float) -> float:
     """Map a raw 0-100 relevance into its tier's band, preserving order within the tier."""
     lo, hi = _BANDS[tier]
@@ -45,14 +58,12 @@ def _band_score(tier: FitTier, raw: float) -> float:
 
 
 def _reconcile_tier(embedding_tier: FitTier, llm_tier: FitTier) -> FitTier:
-    """LLM verdict vs embedding tier: outright not_a_fit is a veto; otherwise the LLM
-    may move the tier by at most one step in either direction (a 4B model's opinion
-    should refine the ranking, not replace it)."""
-    if llm_tier == FitTier.not_fit:
-        return llm_tier
+    """LLM verdict vs embedding tier. The LLM read the synopsis, so it may demote
+    freely (embeddings only saw similarity); it may promote by at most one step
+    (a 4B model shouldn't mint a green fit the retrieval never suggested)."""
     e, l = _TIER_ORDER.index(embedding_tier), _TIER_ORDER.index(llm_tier)
-    if l < e:
-        return _TIER_ORDER[max(e - 1, l)]
+    if l <= e:
+        return llm_tier
     return _TIER_ORDER[min(e + 1, l)]
 
 
@@ -135,17 +146,18 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
             {
                 "source_id": o.source_id, "title": o.title, "agency": o.agency,
                 "summary": o.summary, "eligible_applicants": o.eligible_applicants,
+                "eligibility_flag": o.eligibility_flag,
             }
             for o in judged_set
         ],
     )
     judged_ids = {sid for sid in verdicts}
-    # A program the LLM never read cannot be a confident recommendation: cap it at
-    # potential so un-vetted programs can't out-rank vetted ones just by being unread.
+    # A program the LLM never read is unvetted: it can appear as adjacent context but
+    # never as a real (likely/potential) fit, so unread programs can't out-rank read ones.
     if verdicts:
         for o in opps:
-            if o.source_id not in judged_ids and o.fit_tier == FitTier.likely:
-                o.fit_tier = FitTier.potential
+            if o.source_id not in judged_ids and o.fit_tier in (FitTier.likely, FitTier.potential):
+                o.fit_tier = FitTier.adjacent
     for o in judged_set:
         v = verdicts.get(o.source_id)
         if not v:
@@ -200,9 +212,10 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
     # inside it, so a shown score can never contradict the tier next to it.
     for o in sbir_opps + opps:
         o.score = _band_score(o.fit_tier, o.score)
-    merged = sorted(
+    ranked = sorted(
         sbir_opps + opps, key=lambda o: (tier_rank[o.fit_tier], o.score), reverse=True
-    )[:MAX_RETURNED]
+    )
+    merged = _select(ranked)
 
     # An SBIR pathway with deep award history belongs on the map even when posted
     # grants edge it out on score — it's the canonical non-dilutive route.
@@ -214,8 +227,8 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
         and best_sbir.history
         and best_sbir.history.similar_companies >= 8
     ):
-        merged = merged[: MAX_RETURNED - 1] + [best_sbir]
-        merged.sort(key=lambda o: o.score, reverse=True)
+        merged.append(best_sbir)
+        merged.sort(key=lambda o: (tier_rank[o.fit_tier], o.score), reverse=True)
 
     if not rd:
         for o in merged:

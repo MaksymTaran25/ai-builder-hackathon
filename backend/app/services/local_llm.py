@@ -31,9 +31,8 @@ MAX_TOKENS = 260
 SYSTEM = (
     "You are a federal funding analyst. Judge whether ONE government program is relevant "
     "for ONE startup. Be strict and honest: topical keyword overlap is not relevance. "
-    "likely_fit = the program funds the startup's actual kind of work and the listed eligible "
-    "applicants include small businesses / for-profits (trust the 'Eligible applicants' line "
-    "as authoritative). potential_fit = topically right but eligibility unclear or partnership "
+    "likely_fit = the program funds the startup's actual kind of work AND 'Small business may apply' "
+    "is YES — when it is YES, do not hedge about eligibility. potential_fit = topically right but eligibility unclear or partnership "
     "needed. adjacent = related theme, different purpose or audience. not_a_fit = programs for "
     "foreign audiences, public diplomacy, unrelated sectors, or clearly non-business recipients. "
     "Return ONLY a JSON object with keys: relevance (integer 0-100), "
@@ -50,8 +49,8 @@ def _cache_key(profile_text: str, cand: dict) -> str:
     import hashlib
 
     blob = "|".join([
-        MLX_MODEL, profile_text, str(cand.get("source_id")), (cand.get("summary") or "")[:1200],
-        ",".join(cand.get("eligible_applicants") or []),
+        "v2", MLX_MODEL, profile_text, str(cand.get("source_id")), (cand.get("summary") or "")[:1200],
+        ",".join(cand.get("eligible_applicants") or []), str(cand.get("eligibility_flag")),
     ])
     return hashlib.sha256(blob.encode()).hexdigest()
 
@@ -130,11 +129,16 @@ def provider_name() -> str:
     )
 
 
+def _elig_word(flag) -> str:
+    return {"ok": "YES (listed explicitly)", "likely_ineligible": "NO (not on applicant list)"}.get(flag, "UNCLEAR")
+
+
 def _prompt_for(profile_text: str, cand: dict) -> str:
     return (
         f"STARTUP:\n{profile_text}\n\n"
         f"PROGRAM:\nTitle: {cand.get('title','')}\nAgency: {cand.get('agency','')}\n"
-        f"Eligible applicants: {', '.join(cand.get('eligible_applicants') or []) or 'not stated'}\n"
+        f"Eligible applicants (official, authoritative): {', '.join(cand.get('eligible_applicants') or []) or 'not stated'}\n"
+        f"Small business may apply: {_elig_word(cand.get('eligibility_flag'))}\n"
         f"Synopsis: {(cand.get('summary') or '')[:1200]}\n\n"
         "Judge relevance for this startup."
     )
