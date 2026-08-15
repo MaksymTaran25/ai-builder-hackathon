@@ -30,24 +30,30 @@ government-as-customer paths.
 
 ## Run it
 
-Backend (Python 3.12, [uv](https://docs.astral.sh/uv/), MongoDB):
+Backend — one command from a fresh clone (macOS; installs MongoDB via Homebrew, downloads
+SBIR data + local models, loads the warehouse):
 
 ```bash
-# one-time: local MongoDB (no Atlas, no auth — stays fully offline)
-brew tap mongodb/brew && brew trust mongodb/brew && brew install mongodb-community
-brew services start mongodb/brew/mongodb-community
-
-cd backend
-uv sync
-# one-time: download SBIR bulk data (~350MB) and build the text index
-curl -L -o data/raw/sbir_award_data.csv "https://data.www.sbir.gov/awarddatapublic/award_data.csv"
-uv run python -m app.ingest.sbir_ingest 2018
-# run
-uv run uvicorn app.main:app --port 8000
+bash backend/scripts/setup.sh
+cd backend && uv run uvicorn app.main:app --port 8000
+# or as a self-restarting login service:  bash scripts/install_service.sh
 ```
 
-API surface: REST (`/api/*`) **and GraphQL** (`/graphql` — open it in a browser for the
-interactive GraphiQL explorer). The frontend queries GraphQL first and falls back to REST.
+Then `curl localhost:8000/api/health` → GraphQL at `http://localhost:8000/graphql`.
+Whole-stack check any time: `bash scripts/check_stack.sh`.
+
+<details><summary>Manual steps (what setup.sh does)</summary>
+
+```bash
+brew tap mongodb/brew && brew trust mongodb/brew && brew install mongodb-community
+brew services start mongodb/brew/mongodb-community
+cd backend && uv sync
+curl -L -o data/raw/sbir_award_data.csv "https://data.www.sbir.gov/awarddatapublic/award_data.csv"
+uv run python -m app.ingest.sbir_ingest 2018      # 39.8K SBIR awards → Mongo
+uv run python -m app.ingest.harvest              # ~900 Grants.gov programs → Mongo
+```
+The MLX model (Apple Silicon) and embedding model download on first start.
+</details>
 
 Frontend (Node 20+):
 
