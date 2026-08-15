@@ -20,7 +20,7 @@ from . import eligibility, grants_gov, index, llm, local_llm, sbir, store, usasp
 
 log = logging.getLogger(__name__)
 
-SIM_FLOOR = 0.52       # every warehouse program above this similarity is a candidate (no count cap)
+SIM_FLOOR = 0.58       # similarity floor: every warehouse program above it is read by the LLM (no count cap)
 ADJACENT_TAIL = 15     # programs just below the floor kept as adjacent context
 MAX_LLM_READS = int(__import__('os').environ.get('MAX_LLM_READS', '400'))  # safety valve only
 MIN_SHOWN = 5      # below this many real fits, adjacent programs fill in

@@ -8,7 +8,10 @@ const TIER: Record<FitTier, { label: string; fg: string; dot: string; rail: stri
   not_a_fit: { label: 'Unlikely', fg: 'text-notfit', dot: 'bg-notfit', rail: 'var(--notfit)' },
 }
 
+const TOP_N = 15
+
 export default function OpportunityMap({ data, onBack }: { data: MatchResponse; onBack: () => void }) {
+  const [showAll, setShowAll] = useState(false)
   const s = data.summary
   const federal = data.opportunities.filter((o) => o.source !== 'utah')
   const utah = data.opportunities.filter((o) => o.source === 'utah')
@@ -51,9 +54,19 @@ export default function OpportunityMap({ data, onBack }: { data: MatchResponse; 
       <div className="mt-10 grid gap-10 lg:grid-cols-[1fr_320px]">
         {/* main list */}
         <div className="space-y-3">
-          {federal.map((o, i) => (
+          {(showAll ? federal : federal.slice(0, TOP_N)).map((o, i) => (
             <Card key={o.source_id} o={o} index={i} />
           ))}
+          {federal.length > TOP_N && (
+            <button
+              onClick={() => setShowAll(!showAll)}
+              className="w-full rounded-lg border border-dashed border-hairline py-3 text-[14px] text-graphite transition-colors hover:border-ink hover:text-ink print:hidden"
+            >
+              {showAll
+                ? 'Show fewer'
+                : `Show ${federal.length - TOP_N} more programs we reviewed`}
+            </button>
+          )}
           <p className="pt-6 text-[12px] leading-relaxed text-ash">
             Guidance generated from official data — not an eligibility determination. Verify with the listing before applying.
           </p>

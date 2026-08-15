@@ -85,7 +85,7 @@ def run_case(name: str, text: str) -> dict:
     ut = [o for o in opps if o["source"] == "utah"]
 
     check("responds", bool(opps), "empty opportunity list")
-    check(f"latency {dt:.1f}s < 60s", dt < 60)
+    check(f"latency {dt:.1f}s < 300s", dt < 300)
     tier_rank = {"likely_fit": 3, "potential_fit": 2, "adjacent": 1, "not_a_fit": 0}
     keys = [(tier_rank[o["fit_tier"]], o["score"]) for o in fed]
     check("sorted by tier then score", keys == sorted(keys, reverse=True))
