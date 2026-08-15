@@ -88,6 +88,26 @@ def similar_awards(topics: list[str], state: Optional[str], limit: int = 400) ->
     return sorted(merged.values(), key=lambda r: r["score"], reverse=True)[:limit]
 
 
+def search_awards(search: str, state: Optional[str], limit: int = 20) -> list[dict]:
+    """Warehouse search: free-text over the corpus, optional hard state filter."""
+    terms = re.sub(r"[^a-zA-Z0-9 ]", " ", search).strip()
+    if not terms:
+        return []
+    q: dict = {"$text": {"$search": terms}}
+    if state:
+        q["state"] = state
+    try:
+        return list(
+            _col()
+            .find(q, _PROJECTION)
+            .sort([("score", {"$meta": "textScore"})])
+            .limit(limit)
+        )
+    except Exception:
+        log.exception("Mongo warehouse search failed")
+        return []
+
+
 def history_for_topics(topics: list[str], state: Optional[str]) -> Optional[HistoricalStats]:
     rows = similar_awards(topics, state)
     if not rows:

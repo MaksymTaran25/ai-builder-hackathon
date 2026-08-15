@@ -112,17 +112,7 @@ export function daysUntil(dateStr?: string | null): number | null {
   return Math.round((d.getTime() - Date.now()) / 86400000)
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!r.ok) throw new Error(`${path} failed: ${r.status}`)
-  return r.json()
-}
-
-// ---- GraphQL layer (primary transport; REST kept as automatic fallback) ----
+// ---- GraphQL transport (the only data path) ----
 
 const PROFILE_FIELDS = `description industry technology city state employees revenue_usd
   capital_raised_usd funding_stage rd_activities product_maturity target_customers
@@ -165,20 +155,12 @@ async function gql<T>(query: string, variables: Record<string, unknown>): Promis
 
 export const api = {
   extract: async (text: string): Promise<ExtractResponse> => {
-    try {
-      const d = await gql<{ extract_profile: ExtractResponse }>(EXTRACT_QUERY, { text })
-      return d.extract_profile
-    } catch {
-      return post<ExtractResponse>('/api/profile/extract', { text })
-    }
+    const d = await gql<{ extract_profile: ExtractResponse }>(EXTRACT_QUERY, { text })
+    return d.extract_profile
   },
   match: async (profile: StartupProfile): Promise<MatchResponse> => {
-    try {
-      const d = await gql<{ match: MatchResponse }>(MATCH_QUERY, { profile })
-      return d.match
-    } catch {
-      return post<MatchResponse>('/api/match', profile)
-    }
+    const d = await gql<{ match: MatchResponse }>(MATCH_QUERY, { profile })
+    return d.match
   },
 }
 

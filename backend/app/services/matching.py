@@ -16,7 +16,7 @@ from ..models import (
     SimilarCompany,
     StartupProfile,
 )
-from . import eligibility, grants_gov, llm, sbir, usaspending, utah
+from . import eligibility, grants_gov, llm, sbir, store, usaspending, utah
 
 log = logging.getLogger(__name__)
 
@@ -73,6 +73,8 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
 
     # Stage B: full details for the survivors — synopsis, award data, applicant types
     await _attach_details(opps)
+    # warehouse: persist everything we fetched, queryable by any other process
+    await asyncio.to_thread(store.upsert_opportunities, opps)
 
     # Stage C: score with real program text
     candidates = [
@@ -182,12 +184,14 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
         if not isinstance(e, Exception):
             o.explanation = e
 
-    return MatchResponse(
+    result = MatchResponse(
         summary=_summarize(merged, overall_note),
         opportunities=merged,
         similar_companies=_similar_companies(similar_rows, profile.state),
         agency_map=_agency_map(merged, similar_rows),
     )
+    await asyncio.to_thread(store.save_match_run, profile, result)
+    return result
 
 
 # ------------------------------------------------------------------ stages
@@ -241,6 +245,8 @@ async def _attach_history(opps: list[Opportunity], profile: StartupProfile) -> N
     async def one(o: Opportunity) -> None:
         if o.source == "grants_gov" and o.cfda:
             o.history = await usaspending.awards_for_cfda(o.cfda, profile.state)
+            if o.history:
+                await asyncio.to_thread(store.save_history, o.cfda, profile.state, o.history)
 
     await asyncio.gather(*(one(o) for o in opps))
 

@@ -1,5 +1,6 @@
 """Demo-readiness gate: runs the judged test cases + edge cases against a running
-backend and checks invariants. Usage: uv run python scripts/verify.py [base_url]
+backend (GraphQL-only API) and checks invariants.
+Usage: uv run python scripts/verify.py [base_url]
 """
 from __future__ import annotations
 
@@ -7,9 +8,25 @@ import json
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
+
+PROFILE_FIELDS = """description industry technology city state employees revenue_usd
+  capital_raised_usd funding_stage rd_activities product_maturity target_customers
+  capital_need_min_usd capital_need_max_usd use_of_funds"""
+
+EXTRACT_QUERY = f"""query E($text: String!) {{ extract_profile(text: $text) {{
+  profile {{ {PROFILE_FIELDS} }} followups {{ field question }} }} }}"""
+
+MATCH_QUERY = """query M($p: StartupProfileInput!) { match(profile: $p) {
+  summary { high_potential total_potential_value_usd agencies closing_within_90_days overall_note }
+  opportunities { source source_id title agency fit_tier score close_date url eligibility_flag
+    history { similar_companies in_state_recipients } }
+  similar_companies { name state total_usd }
+  agency_map { short open_opportunities }
+} }"""
 
 CASES = {
     "healthcare": "We're a 15-person Utah company developing AI-powered software that helps hospitals reduce administrative work for nurses. We've raised $2.5M, have $1M in ARR, and are looking for $500K–$2M of non-dilutive capital to fund product development and hospital pilots.",
@@ -34,19 +51,34 @@ def check(name: str, cond: bool, detail: str = ""):
         print(f"  FAIL  {name}  {detail}")
 
 
-def post(path: str, body: dict, timeout: int = 90) -> dict:
+def _post(path: str, body: dict, timeout: int = 90) -> dict:
     req = urllib.request.Request(
         f"{BASE}{path}", json.dumps(body).encode(), {"content-type": "application/json"}
     )
     return json.load(urllib.request.urlopen(req, timeout=timeout))
 
 
+def gql(query: str, variables: dict) -> dict:
+    d = _post("/graphql", {"query": query, "variables": variables})
+    if d.get("errors"):
+        raise RuntimeError(f"graphql errors: {json.dumps(d['errors'])[:200]}")
+    return d["data"]
+
+
+def extract(text: str) -> dict:
+    return gql(EXTRACT_QUERY, {"text": text})["extract_profile"]
+
+
+def match(profile: dict) -> dict:
+    return gql(MATCH_QUERY, {"p": profile})["match"]
+
+
 def run_case(name: str, text: str) -> dict:
     print(f"\n== {name} ==")
     t0 = time.time()
-    ex = post("/api/profile/extract", {"text": text})
+    ex = extract(text)
     profile = ex["profile"]
-    d = post("/api/match", profile)
+    d = match(profile)
     dt = time.time() - t0
     opps = d["opportunities"]
     fed = [o for o in opps if o["source"] != "utah"]
@@ -92,36 +124,45 @@ for name, text in CASES.items():
         failed += 1
         print(f"  FAIL  {name} crashed: {e}")
 
-# GraphQL parity: same profile through /graphql must equal REST
-print("\n== graphql parity ==")
-gq = """query M($p: StartupProfileInput!) { match(profile: $p) {
-  summary { high_potential } opportunities { source_id fit_tier score } } }"""
-p_hc = post("/api/profile/extract", {"text": CASES["healthcare"]})["profile"]
-rest = post("/api/match", p_hc)
-graph = post("/graphql", {"query": gq, "variables": {"p": p_hc}})
-if graph.get("errors"):
-    check("graphql executes", False, str(graph["errors"])[:120])
-else:
-    gm = graph["data"]["match"]
-    check("graphql executes", True)
-    check(
-        "graphql == rest (ids + tiers)",
-        [(o["source_id"], o["fit_tier"]) for o in gm["opportunities"]]
-        == [(o["source_id"], o["fit_tier"]) for o in rest["opportunities"]],
+# REST data endpoints must be gone (GraphQL-only by design)
+print("\n== graphql-only surface ==")
+try:
+    _post("/api/match", {"description": "x"}, timeout=10)
+    check("REST /api/match removed", False, "endpoint still exists")
+except urllib.error.HTTPError as e:
+    check("REST /api/match removed", e.code in (404, 405), f"status {e.code}")
+except Exception as e:
+    check("REST /api/match removed", False, str(e)[:80])
+
+# warehouse: everything fetched must be stored in MongoDB and queryable
+print("\n== warehouse (MongoDB via GraphQL) ==")
+try:
+    w = gql(
+        """query { stored_opportunities(limit: 5) match_runs(limit: 3) award_history(limit: 3)
+             sbir_awards(search: "artificial intelligence", state: "UT", limit: 3) {
+               company state award_amount } }""",
+        {},
     )
-    check("graphql tier values match REST format", all(
-        o["fit_tier"] in ("likely_fit", "potential_fit", "adjacent", "not_a_fit")
-        for o in gm["opportunities"]
-    ))
+    check("stored_opportunities populated", len(w["stored_opportunities"]) > 0)
+    check("match_runs recorded", len(w["match_runs"]) > 0)
+    check("award_history cached", len(w["award_history"]) > 0)
+    check("sbir corpus queryable", len(w["sbir_awards"]) > 0)
+    check(
+        "sbir state filter works",
+        all(a["state"] == "UT" for a in w["sbir_awards"]),
+        str(w["sbir_awards"])[:100],
+    )
+except Exception as e:
+    check("warehouse queries", False, str(e)[:150])
 
 # concurrency: 3 parallel matches must all succeed
 print("\n== concurrency (3 parallel) ==")
 import concurrent.futures as cf
 
-profile = post("/api/profile/extract", {"text": CASES["healthcare"]})["profile"]
+profile = extract(CASES["healthcare"])["profile"]
 t0 = time.time()
 with cf.ThreadPoolExecutor(3) as pool:
-    results = list(pool.map(lambda _: post("/api/match", profile), range(3)))
+    results = list(pool.map(lambda _: match(profile), range(3)))
 check(f"3 parallel matches ok ({time.time()-t0:.1f}s)", all(r["opportunities"] for r in results))
 
 print(f"\n{'='*40}\n{passed} passed, {failed} failed")

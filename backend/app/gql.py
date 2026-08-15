@@ -9,10 +9,11 @@ from typing import Optional
 
 import strawberry
 from strawberry.fastapi import GraphQLRouter
+from strawberry.scalars import JSON
 from strawberry.schema.config import StrawberryConfig
 
 from . import models
-from .services import llm, matching
+from .services import llm, matching, sbir, store
 
 
 
@@ -143,7 +144,64 @@ class MatchResult:
 
 
 @strawberry.type
+class SbirAward:
+    company: str
+    title: str
+    agency: str
+    phase: str
+    program: str
+    award_year: int
+    award_amount: float
+    state: str
+    city: str
+
+
+@strawberry.type
 class Query:
+    # ---- warehouse reads: any process can query the stored government data ----
+
+    @strawberry.field
+    async def stored_opportunities(self, search: Optional[str] = None, limit: int = 20) -> JSON:
+        """Grants.gov opportunities previously fetched + enriched (from MongoDB)."""
+        import asyncio
+
+        return await asyncio.to_thread(store.stored_opportunities, search, min(limit, 200))
+
+    @strawberry.field
+    async def sbir_awards(
+        self, search: str, state: Optional[str] = None, limit: int = 20
+    ) -> list[SbirAward]:
+        """Full-text search over the 39.8K-award SBIR corpus (from MongoDB)."""
+        import asyncio
+
+        rows = await asyncio.to_thread(sbir.search_awards, search, state, min(limit, 100))
+        return [
+            SbirAward(
+                company=r.get("company") or "", title=r.get("title") or "",
+                agency=r.get("agency") or "", phase=r.get("phase") or "",
+                program=r.get("program") or "", award_year=r.get("award_year") or 0,
+                award_amount=r.get("award_amount") or 0, state=r.get("state") or "",
+                city=r.get("city") or "",
+            )
+            for r in rows[:limit]
+        ]
+
+    @strawberry.field
+    async def match_runs(self, limit: int = 5) -> JSON:
+        """Recent profile->map runs with their results (from MongoDB)."""
+        import asyncio
+
+        return await asyncio.to_thread(store.stored_match_runs, min(limit, 50))
+
+    @strawberry.field
+    async def award_history(self, limit: int = 20) -> JSON:
+        """Cached USAspending recipient stats per CFDA program set (from MongoDB)."""
+        import asyncio
+
+        return await asyncio.to_thread(store.stored_award_history, min(limit, 100))
+
+    # ---- live pipeline ----
+
     @strawberry.field
     async def extract_profile(self, text: str) -> ExtractResult:
         profile, followups = await llm.extract_profile(text)
