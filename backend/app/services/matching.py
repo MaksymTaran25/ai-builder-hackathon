@@ -217,12 +217,11 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
                 o.score = _band_score(FitTier.potential, o.score)
         merged.sort(key=lambda o: (tier_rank[o.fit_tier], o.score), reverse=True)
 
-    top5 = sorted((o.score for o in merged), reverse=True)[:5]
-    weak_overall = (
-        not rd
-        or len([o for o in merged if o.fit_tier in (FitTier.likely, FitTier.potential)]) <= 2
-        or (top5 and sorted(top5)[len(top5) // 2] < 70)
-    )
+    # Weak overall = no R&D signal, or fewer than 3 real fits, or nothing green at all.
+    # Keyed on tiers (judgment), not banded scores (position within a tier).
+    n_fits = len([o for o in merged if o.fit_tier in (FitTier.likely, FitTier.potential)])
+    n_green = len([o for o in merged if o.fit_tier == FitTier.likely])
+    weak_overall = (not rd) or n_fits <= 2 or n_green == 0
     if not overall_note and weak_overall:
         overall_note = (
             "Traditional federal grants look like a weak fit for this business model — most "
