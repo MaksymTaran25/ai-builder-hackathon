@@ -30,30 +30,36 @@ government-as-customer paths.
 
 ## Run it
 
-Backend — one command from a fresh clone (macOS; installs MongoDB via Homebrew, downloads
-SBIR data + local models, loads the warehouse):
+Works on **macOS, Linux, and Windows** (WSL2 or native). One-time setup from a fresh clone:
 
 ```bash
-bash backend/scripts/setup.sh
-cd backend && uv run uvicorn app.main:app --port 8000
-# or as a self-restarting login service:  bash scripts/install_service.sh
+git clone https://github.com/MaksymTaran25/ai-builder-hackathon.git
+cd ai-builder-hackathon && git checkout max
+cd backend && uv run python setup.py        # ~10 min first time; idempotent
 ```
 
-Then `curl localhost:8000/api/health` → GraphQL at `http://localhost:8000/graphql`.
-Whole-stack check any time: `bash scripts/check_stack.sh`.
-
-<details><summary>Manual steps (what setup.sh does)</summary>
+Prereqs: [uv](https://docs.astral.sh/uv/) and **Docker** (for MongoDB — `docker compose up -d`
+is run for you; on macOS without Docker it falls back to Homebrew). The script installs Python
+deps, starts Mongo, downloads the SBIR data (~350MB) and loads it, harvests ~900 Grants.gov
+programs into your local warehouse, and pulls the local models.
 
 ```bash
-brew tap mongodb/brew && brew trust mongodb/brew && brew install mongodb-community
-brew services start mongodb/brew/mongodb-community
-cd backend && uv sync
-curl -L -o data/raw/sbir_award_data.csv "https://data.www.sbir.gov/awarddatapublic/award_data.csv"
-uv run python -m app.ingest.sbir_ingest 2018      # 39.8K SBIR awards → Mongo
-uv run python -m app.ingest.harvest              # ~900 Grants.gov programs → Mongo
+uv run uvicorn app.main:app --port 8000     # start Server 1
+curl localhost:8000/api/health              # → GraphQL at http://localhost:8000/graphql
 ```
-The MLX model (Apple Silicon) and embedding model download on first start.
-</details>
+
+**Local LLM by platform** — the relevance judge picks the best backend automatically:
+- **Apple Silicon** → MLX (in-process, fastest). Nothing to install.
+- **Linux / Windows / Intel Mac** → [Ollama](https://ollama.com): install it, then
+  `ollama pull qwen3:4b`. `setup.py` pulls the model if Ollama is present.
+- **Neither** → matching still works on embeddings + rules (no "Analyst" line on cards).
+`/api/health` shows which is active. `LOCAL_LLM=off` disables the judge; `LOCAL_LLM_BACKEND=ollama` forces Ollama on a Mac.
+
+**Nightly harvest** — macOS: `bash scripts/install_nightly.sh` (launchd). Linux: add to cron:
+`0 0 * * * cd /path/to/backend && uv run python -m app.ingest.harvest >> data/logs/harvest.log 2>&1`.
+Or just run `uv run python -m app.ingest.harvest` whenever you want fresh data.
+
+Whole-stack check: `bash scripts/check_stack.sh` (macOS/Linux).
 
 Frontend (Node 20+):
 

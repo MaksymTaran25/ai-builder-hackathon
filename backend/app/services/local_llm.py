@@ -94,6 +94,8 @@ def _init_backend() -> str:
             _backend = "none"
             return _backend
         try:
+            if os.environ.get("LOCAL_LLM_BACKEND", "").lower() == "ollama":
+                raise ImportError("MLX skipped by LOCAL_LLM_BACKEND=ollama")
             from mlx_lm import load
 
             _mlx = load(MLX_MODEL)

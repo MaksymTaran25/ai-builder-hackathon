@@ -1,0 +1,21 @@
+# MongoDB for the GovMatch warehouse — identical on macOS / Linux / Windows.
+#   docker compose up -d        # start
+#   docker compose down         # stop (data persists in the named volume)
+# Server 1 then connects to mongodb://localhost:27017 (the default MONGO_URL).
+services:
+  mongo:
+    image: mongo:7
+    container_name: govmatch-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - govmatch-mongo:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  govmatch-mongo:
