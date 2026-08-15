@@ -160,30 +160,21 @@ curl -X POST "http://localhost:8002/query" \
 
 ---
 
-## 🔄 Replacing the Mock Data Layer with MongoDB
+## 🔌 Live data: wired to Server 1 (GovMatch)
 
-The data layer in `app/mock_data.py` has been explicitly abstracted so you can swap out the in-memory array for a read-only MongoDB collection in seconds:
+Server 2 now queries **Server 1's GraphQL API** (`GOVMATCH_URL`, default `http://localhost:8000`)
+instead of the in-memory mocks. Server 1 owns the MongoDB warehouse (900+ nightly-harvested
+Grants.gov opportunities, 39.8K SBIR awards, USAspending history) and the matching intelligence
+(local LLM relevance judge on MLX + embeddings + eligibility gates). `app/govmatch_client.py`
+reshapes Server 1's `match_person` result into this service's response contract — **no changes
+to `models.py`, the `/query` request or response schema.**
 
-1. Install `motor` or `pymongo` in `requirements.txt`:
-   ```bash
-   pip install pymongo
-   ```
+- `why_fit`, `concerns`, `historical_intelligence`, `historical_awards` are real (USAspending / SBIR data)
+- `strategy_recommendations` and `sequential_timeline` are generated from the actual top matches
+- `filters.max_deadline_days` and `filters.min_match_score` are honored
+- If Server 1 is unreachable, Server 2 **automatically falls back to `mock_data.py`** and
+  `/health` says so (`datasource`), so this service never stops answering.
 
-2. Update `app/mock_data.py`:
-   ```python
-   from pymongo import MongoClient
-   from .models import OpportunityItem
-   
-   client = MongoClient("mongodb://localhost:27017")
-   db = client["federal_funding"]
-   collection = db["opportunities"]
-   
-   def get_all_opportunities() -> List[OpportunityItem]:
-       return [OpportunityItem(**doc) for doc in collection.find()]
-       
-   def get_opportunity_by_id(opportunity_id: str) -> Optional[OpportunityItem]:
-       doc = collection.find_one({"id": opportunity_id})
-       return OpportunityItem(**doc) if doc else None
-   ```
+Run Server 1 first (see repo root `README.md`: MongoDB + `cd backend && uv run uvicorn app.main:app --port 8000`),
+then Server 2 as above. Check `GET /health` — `datasource` should mention `GovMatch Server 1`.
 
-No changes to `app/matcher.py`, `app/models.py`, or `app/main.py` are required!

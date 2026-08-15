@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .models import StartupQueryRequest, OpportunityQueryResponse
 from .mock_data import get_all_opportunities
 from .matcher import rank_and_score_opportunities
+from . import govmatch_client
 
 # Setup logging
 logging.basicConfig(
@@ -52,12 +53,18 @@ async def health_check() -> Dict[str, Any]:
     """
     Health check endpoint returning Server 2 operational metadata.
     """
+    upstream = govmatch_client.health()
+    live = bool(upstream.get("ok"))
     return {
         "status": "ok",
         "service": "server2-opportunity-matcher",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "description": "Government Opportunity Matcher & Ranker Service",
-        "datasource": "mock_data (ready for MongoDB swap)",
+        "datasource": (
+            f"GovMatch Server 1 @ {govmatch_client.GOVMATCH_URL} (MongoDB warehouse, "
+            f"judge={upstream.get('relevance_judge')})" if live else "mock_data (Server 1 unreachable)"
+        ),
+        "server1": upstream,
     }
 
 
@@ -84,14 +91,19 @@ async def query_opportunities(payload: StartupQueryRequest) -> OpportunityQueryR
     )
 
     try:
-        # Step 1: Retrieve candidate opportunities from data source (Mock or MongoDB)
-        raw_opportunities = get_all_opportunities()
-
-        # Step 2: Rank and score opportunities based on startup query characteristics
-        response = rank_and_score_opportunities(
-            startup=payload,
-            opportunities=raw_opportunities
-        )
+        # Primary path: Server 1 (GovMatch) — live federal data in MongoDB, LLM-judged
+        # relevance, USAspending history — reshaped into Server 2's response contract.
+        try:
+            response = govmatch_client.query_govmatch(payload)
+            logger.info("Served from GovMatch Server 1 (%s)", govmatch_client.GOVMATCH_URL)
+        except govmatch_client.GovMatchError as exc:
+            # Fallback: in-memory mock repository so Server 2 keeps answering
+            logger.warning("Server 1 unavailable (%s); falling back to mock data", exc)
+            raw_opportunities = get_all_opportunities()
+            response = rank_and_score_opportunities(
+                startup=payload,
+                opportunities=raw_opportunities
+            )
 
         logger.info(
             "Successfully ranked %d opportunities for startup '%s' (Top match: %s - %d%%)",
