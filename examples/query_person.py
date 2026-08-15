@@ -7,6 +7,10 @@ Usage:
   python examples/query_person.py            # uses the embedded sample person
   python examples/query_person.py person.json
   python examples/query_person.py person.json http://localhost:8000
+
+Tip: include at least a sentence or two describing what the company does —
+matching quality scales with description richness; one-word inputs get a
+cautious, low-confidence map (by design).
 """
 from __future__ import annotations
 
