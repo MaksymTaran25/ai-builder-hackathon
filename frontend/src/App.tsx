@@ -25,12 +25,22 @@ export default function App() {
     }
   }
 
+  const step = view.name === 'intake' ? 1 : view.name === 'confirm' ? 2 : 3
+
   return (
     <div className="min-h-screen">
-      <header className="mx-auto flex max-w-[640px] items-center px-6 pt-6 print:hidden">
-        <button onClick={() => setView({ name: 'intake' })} className="text-ink" aria-label="GovMatch home">
-          <Logo />
-        </button>
+      <header className="sticky top-0 z-10 border-b border-hairline bg-paper/90 backdrop-blur print:hidden">
+        <div className="mx-auto flex h-14 max-w-[1080px] items-center justify-between px-6">
+          <button onClick={() => setView({ name: 'intake' })} className="text-ink" aria-label="GovMatch home">
+            <Logo />
+          </button>
+          <nav className="hidden items-center gap-6 text-[13px] sm:flex" aria-label="Progress">
+            <Step n={1} label="Describe" active={step === 1} done={step > 1} />
+            <Step n={2} label="Confirm" active={step === 2} done={step > 2} />
+            <Step n={3} label="Your map" active={step === 3} done={false} />
+          </nav>
+          <span className="hidden text-[12px] text-ash md:block">Live federal data · runs locally</span>
+        </div>
       </header>
 
       {view.name === 'intake' && <Intake onExtracted={(extract) => setView({ name: 'confirm', extract })} />}
@@ -41,13 +51,31 @@ export default function App() {
       {view.name === 'map' && <OpportunityMap data={view.data} onBack={() => setView({ name: 'intake' })} />}
       {view.name === 'error' && (
         <div className="mx-auto max-w-[640px] px-6 pt-28">
-          <p className="text-[15px] text-ink-2">Something went wrong. {view.message}</p>
-          <button className="mt-6 text-[14px] text-accent underline underline-offset-4" onClick={() => setView({ name: 'intake' })}>
-            Start over
-          </button>
+          <div className="card p-8">
+            <h2 className="text-[20px] font-medium text-ink">Something went wrong</h2>
+            <p className="mt-2 text-[14px] text-graphite">{view.message}</p>
+            <button className="btn btn-primary mt-6" onClick={() => setView({ name: 'intake' })}>
+              Start over
+            </button>
+          </div>
         </div>
       )}
     </div>
+  )
+}
+
+function Step({ n, label, active, done }: { n: number; label: string; active: boolean; done: boolean }) {
+  return (
+    <span className={`flex items-center gap-2 ${active ? 'text-ink' : done ? 'text-graphite' : 'text-ash'}`}>
+      <span
+        className={`num flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
+          active ? 'bg-ink text-paper' : done ? 'bg-mist text-graphite' : 'border border-hairline text-ash'
+        }`}
+      >
+        {done ? '✓' : n}
+      </span>
+      {label}
+    </span>
   )
 }
 
@@ -65,10 +93,26 @@ function Loading() {
     return () => clearInterval(id)
   }, [])
   return (
-    <div className="mx-auto max-w-[640px] px-6 pt-36">
-      <p className="text-[17px] text-ink">{STEPS[step]}…</p>
-      <div className="mt-4 h-px w-full bg-hairline">
-        <div className="h-px bg-ink transition-all duration-1000" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+    <div className="mx-auto max-w-[520px] px-6 pt-32">
+      <div className="card p-8">
+        <div className="text-[12px] uppercase tracking-wider text-ash">Building your map</div>
+        <ul className="mt-4 space-y-3">
+          {STEPS.map((s, i) => (
+            <li key={s} className={`flex items-center gap-3 text-[15px] ${i <= step ? 'text-ink' : 'text-ash'}`}>
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
+                  i < step ? 'bg-ink text-paper' : i === step ? 'border-2 border-ink' : 'border border-hairline'
+                }`}
+              >
+                {i < step ? '✓' : ''}
+              </span>
+              {s}
+            </li>
+          ))}
+        </ul>
+        <div className="mt-6 h-1 w-full overflow-hidden rounded-full bg-mist">
+          <div className="h-1 rounded-full bg-ink transition-all duration-1000" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+        </div>
       </div>
     </div>
   )

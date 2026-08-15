@@ -26,48 +26,67 @@ export default function Confirm({ extract, onRun, onBack }: Props) {
     onRun(p)
   }
 
-  const facts = [
-    profile.industry,
-    profile.state,
-    profile.employees != null ? `${profile.employees} employees` : null,
-    profile.revenue_usd != null ? `${fmtUSD(profile.revenue_usd)} revenue` : null,
-    profile.capital_raised_usd != null ? `${fmtUSD(profile.capital_raised_usd)} raised` : null,
-    profile.capital_need_max_usd != null
-      ? `seeking ${fmtUSD(profile.capital_need_min_usd)}–${fmtUSD(profile.capital_need_max_usd)}`
-      : null,
-  ].filter(Boolean) as string[]
+  const rows: [string, string | null][] = [
+    ['Industry', profile.industry ?? null],
+    ['Location', profile.state ?? null],
+    ['Team', profile.employees != null ? `${profile.employees} employees` : null],
+    ['Revenue', profile.revenue_usd != null ? fmtUSD(profile.revenue_usd) : null],
+    ['Raised', profile.capital_raised_usd != null ? fmtUSD(profile.capital_raised_usd) : null],
+    [
+      'Seeking',
+      profile.capital_need_max_usd != null
+        ? `${fmtUSD(profile.capital_need_min_usd)} – ${fmtUSD(profile.capital_need_max_usd)}`
+        : null,
+    ],
+    ['Technology', (profile.technology ?? []).join(', ') || null],
+  ]
 
   return (
-    <div className="mx-auto max-w-[640px] px-6 pt-28 pb-24">
-      <button onClick={onBack} className="text-[13px] text-ash transition-colors hover:text-ink">
-        ← Edit
+    <div className="mx-auto max-w-[680px] px-6 pb-24 pt-16">
+      <button onClick={onBack} className="btn btn-ghost -ml-3 h-9 px-3 text-[13px]">
+        ← Edit description
       </button>
-      <h2 className="display mt-6 text-[44px] text-ink">Does this look <em>right</em>?</h2>
+      <h2 className="display mt-6 text-[40px] text-ink">Does this look <em>right</em>?</h2>
 
-      <p className="mt-6 text-[17px] leading-relaxed text-ink">{facts.join(' · ')}</p>
+      <div className="card mt-8 overflow-hidden">
+        <dl>
+          {rows.map(([k, v], i) => (
+            <div key={k} className={`grid grid-cols-[130px_1fr] gap-4 px-6 py-3.5 ${i > 0 ? 'border-t border-hairline' : ''}`}>
+              <dt className="text-[13px] text-graphite">{k}</dt>
+              <dd className={`text-[15px] ${v ? 'text-ink' : 'text-ash'} ${k !== 'Industry' && k !== 'Technology' && v ? 'num' : ''}`}>
+                {v ?? 'Not stated'}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
 
       {extract.followups.length > 0 && (
-        <div className="mt-10 space-y-6">
-          {extract.followups.map((q) => (
-            <label key={q.field} className="block">
-              <span className="text-[15px] text-graphite">{q.question}</span>
-              <input
-                className="mt-1 w-full border-b border-hairline bg-transparent py-2 text-[16px] text-ink outline-none transition-colors focus:border-ink"
-                value={answers[q.field] ?? ''}
-                onChange={(e) => setAnswers({ ...answers, [q.field]: e.target.value })}
-                placeholder="Optional"
-              />
-            </label>
-          ))}
+        <div className="card mt-6 p-6">
+          <div className="text-[12px] uppercase tracking-wider text-ash">A few quick questions</div>
+          <p className="mt-1 text-[13px] text-graphite">Optional — each answer sharpens the match.</p>
+          <div className="mt-5 space-y-4">
+            {extract.followups.map((q) => (
+              <label key={q.field} className="block">
+                <span className="text-[14px] text-ink">{q.question}</span>
+                <input
+                  className="field mt-2 h-11 py-0"
+                  value={answers[q.field] ?? ''}
+                  onChange={(e) => setAnswers({ ...answers, [q.field]: e.target.value })}
+                  placeholder="Optional"
+                />
+              </label>
+            ))}
+          </div>
         </div>
       )}
 
-      <button
-        onClick={apply}
-        className="mt-12 bg-ink px-6 py-3 text-[15px] font-medium text-paper transition-opacity hover:opacity-85"
-      >
-        Show my opportunities
-      </button>
+      <div className="mt-8 flex items-center justify-between">
+        <span className="text-[13px] text-ash">Takes about ten seconds.</span>
+        <button onClick={apply} className="btn btn-primary">
+          Show my opportunities <span aria-hidden="true">→</span>
+        </button>
+      </div>
     </div>
   )
 }
