@@ -129,7 +129,13 @@ function Card({ o, index }: { o: Opportunity; index: number }) {
           {oneLine && <p className="mt-2 line-clamp-2 text-[14px] leading-relaxed text-ink-2">{oneLine}</p>}
         </div>
         <div className="shrink-0 text-right">
-          <div className={`num text-[26px] leading-none ${t.fg}`}>{Math.round(o.score)}<span className="text-[13px] text-ash">%</span></div>
+          <div
+            className={`num text-[26px] leading-none ${t.fg}`}
+            title="Relevance: how closely this program's own description matches your company, as read by our local model. Green programs score 70–100, yellow 45–69. Not a probability of funding."
+          >
+            {Math.round(o.score)}<span className="text-[13px] text-ash">%</span>
+          </div>
+          <div className="mt-0.5 text-[10px] uppercase tracking-wider text-ash">relevance</div>
           <div className="num mt-2 text-[12px] leading-relaxed text-graphite">
             {value && <div className="text-ink">{value}</div>}
             {days != null && days >= 0 && (

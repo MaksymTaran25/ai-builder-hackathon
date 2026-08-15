@@ -27,6 +27,22 @@ HISTORY_TOP_N = 8  # opportunities that get USAspending history
 
 _TIER_ORDER = [FitTier.not_fit, FitTier.adjacent, FitTier.potential, FitTier.likely]
 
+# Score bands per tier: (low, high). Green owns 70-100, yellow 45-69, adjacent 20-44.
+_BANDS = {
+    FitTier.likely: (70.0, 98.0),
+    FitTier.potential: (45.0, 69.0),
+    FitTier.adjacent: (20.0, 44.0),
+    FitTier.not_fit: (0.0, 19.0),
+}
+
+
+def _band_score(tier: FitTier, raw: float) -> float:
+    """Map a raw 0-100 relevance into its tier's band, preserving order within the tier."""
+    lo, hi = _BANDS[tier]
+    r = max(0.0, min(100.0, raw)) / 100.0
+    return round(lo + r * (hi - lo), 1)
+
+
 
 def _reconcile_tier(embedding_tier: FitTier, llm_tier: FitTier) -> FitTier:
     """LLM verdict vs embedding tier: outright not_a_fit is a veto; otherwise the LLM
@@ -173,6 +189,10 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
 
     opps = [o for o in opps if o.fit_tier != FitTier.not_fit]
     tier_rank = {FitTier.likely: 3, FitTier.potential: 2, FitTier.adjacent: 1, FitTier.not_fit: 0}
+    # One scale, not two: the tier decides the band, similarity decides the position
+    # inside it, so a shown score can never contradict the tier next to it.
+    for o in sbir_opps + opps:
+        o.score = _band_score(o.fit_tier, o.score)
     merged = sorted(
         sbir_opps + opps, key=lambda o: (tier_rank[o.fit_tier], o.score), reverse=True
     )[:MAX_RETURNED]
@@ -194,7 +214,8 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
         for o in merged:
             if o.fit_tier == FitTier.likely:
                 o.fit_tier = FitTier.potential
-                o.score = min(o.score, 67.0)
+                o.score = _band_score(FitTier.potential, o.score)
+        merged.sort(key=lambda o: (tier_rank[o.fit_tier], o.score), reverse=True)
 
     top5 = sorted((o.score for o in merged), reverse=True)[:5]
     weak_overall = (
