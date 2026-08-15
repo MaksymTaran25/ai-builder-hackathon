@@ -24,8 +24,14 @@ export default function OpportunityMap({ data, onBack }: { data: MatchResponse; 
         </button>
       </div>
 
-      <h2 className="mt-8 text-[28px] font-medium leading-tight text-ink">
-        {s.high_potential > 0 ? `${s.high_potential} strong ${s.high_potential === 1 ? 'match' : 'matches'}` : 'Your opportunity map'}
+      <h2 className="display mt-8 text-[48px] text-ink">
+        {s.high_potential > 0 ? (
+          <>
+            <span className="num">{s.high_potential}</span> strong <em>{s.high_potential === 1 ? 'match' : 'matches'}</em>
+          </>
+        ) : (
+          <>Your opportunity <em>map</em></>
+        )}
       </h2>
       <p className="mt-2 text-[15px] text-graphite">
         {federal.length} federal programs
@@ -38,8 +44,8 @@ export default function OpportunityMap({ data, onBack }: { data: MatchResponse; 
       )}
 
       <div className="mt-10 border-t border-hairline">
-        {federal.map((o) => (
-          <Card key={o.source_id} o={o} />
+        {federal.map((o, i) => (
+          <Card key={o.source_id} o={o} index={i} />
         ))}
       </div>
 
@@ -87,7 +93,7 @@ export default function OpportunityMap({ data, onBack }: { data: MatchResponse; 
   )
 }
 
-function Card({ o }: { o: Opportunity }) {
+function Card({ o, index }: { o: Opportunity; index: number }) {
   const [open, setOpen] = useState(false)
   const t = TIER[o.fit_tier]
   const days = daysUntil(o.close_date)
@@ -100,8 +106,13 @@ function Card({ o }: { o: Opportunity }) {
   const oneLine = o.llm_reason || o.explanation?.why_fit || ''
   const h = o.history
 
+  const rail = { likely_fit: 'var(--likely)', potential_fit: 'var(--potential)', adjacent: 'var(--adjacent)', not_a_fit: 'var(--notfit)' }[o.fit_tier]
+
   return (
-    <article className="border-b border-hairline">
+    <article
+      className="rise border-b border-hairline"
+      style={{ animationDelay: `${Math.min(index, 8) * 60}ms`, boxShadow: open ? `inset 2px 0 0 ${rail}` : undefined }}
+    >
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
@@ -117,11 +128,14 @@ function Card({ o }: { o: Opportunity }) {
           <div className="mt-1 text-[13px] text-graphite">{o.agency}</div>
           {oneLine && <p className="mt-2 line-clamp-2 text-[14px] leading-relaxed text-ink-2">{oneLine}</p>}
         </div>
-        <div className="num shrink-0 text-right text-[13px] leading-relaxed text-graphite">
-          {value && <div className="text-ink">{value}</div>}
-          {days != null && days >= 0 && (
-            <div className={days <= 30 ? 'text-notfit' : ''}>{days === 0 ? 'closes today' : `${days}d left`}</div>
-          )}
+        <div className="shrink-0 text-right">
+          <div className={`num text-[26px] leading-none ${t.fg}`}>{Math.round(o.score)}<span className="text-[13px] text-ash">%</span></div>
+          <div className="num mt-2 text-[12px] leading-relaxed text-graphite">
+            {value && <div className="text-ink">{value}</div>}
+            {days != null && days >= 0 && (
+              <div className={days <= 30 ? 'text-notfit' : ''}>{days === 0 ? 'closes today' : `${days}d left`}</div>
+            )}
+          </div>
         </div>
       </button>
 

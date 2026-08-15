@@ -42,7 +42,7 @@ export default function Confirm({ extract, onRun, onBack }: Props) {
       <button onClick={onBack} className="text-[13px] text-ash transition-colors hover:text-ink">
         ← Edit
       </button>
-      <h2 className="mt-6 text-[28px] font-medium leading-tight text-ink">Does this look right?</h2>
+      <h2 className="display mt-6 text-[44px] text-ink">Does this look <em>right</em>?</h2>
 
       <p className="mt-6 text-[17px] leading-relaxed text-ink">{facts.join(' · ')}</p>
 

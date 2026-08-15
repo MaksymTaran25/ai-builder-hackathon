@@ -28,9 +28,11 @@ export default function Intake({ onExtracted }: Props) {
 
   return (
     <div className="mx-auto max-w-[640px] px-6 pt-28 pb-24">
-      <h1 className="text-[34px] font-medium leading-tight text-ink">Tell us about your company.</h1>
-      <p className="mt-3 text-[16px] leading-relaxed text-graphite">
-        We'll map the federal funding you may qualify for and show who else received it.
+      <h1 className="display text-[52px] text-ink">
+        Tell us about <em>your</em> company.
+      </h1>
+      <p className="mt-5 max-w-[520px] text-[16px] leading-relaxed text-graphite">
+        We'll map the federal funding you may qualify for — and show you who else received it.
       </p>
 
       <textarea

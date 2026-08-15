@@ -3,6 +3,7 @@ import { api, type ExtractResponse, type MatchResponse, type StartupProfile } fr
 import Intake from './components/Intake'
 import Confirm from './components/Confirm'
 import OpportunityMap from './components/OpportunityMap'
+import Logo from './components/Logo'
 
 type View =
   | { name: 'intake' }
@@ -27,8 +28,8 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="mx-auto flex max-w-[640px] items-center px-6 pt-6 print:hidden">
-        <button onClick={() => setView({ name: 'intake' })} className="text-[14px] font-medium text-ink">
-          GovMatch
+        <button onClick={() => setView({ name: 'intake' })} className="text-ink" aria-label="GovMatch home">
+          <Logo />
         </button>
       </header>
 

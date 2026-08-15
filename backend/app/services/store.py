@@ -22,6 +22,7 @@ from ..models import HistoricalStats, MatchResponse, Opportunity, StartupProfile
 log = logging.getLogger(__name__)
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+FRESH_HOURS = int(os.environ.get("WAREHOUSE_FRESH_HOURS", "48"))
 
 _client = None
 _lock = threading.Lock()
@@ -82,6 +83,44 @@ def save_match_run(profile: StartupProfile, result: MatchResponse) -> None:
         })
     except Exception:
         log.exception("warehouse: match run insert failed")
+
+
+def cached_details(source_ids: list[str], fresh_hours: int) -> dict[str, dict]:
+    """Enriched opportunity docs the harvester (or a prior match) already stored,
+    if refreshed within fresh_hours. Returns {source_id: doc}."""
+    if not source_ids:
+        return {}
+    try:
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=fresh_hours)).isoformat()
+        docs = _db().opportunities.find(
+            {
+                "source_id": {"$in": source_ids},
+                "summary": {"$nin": [None, ""]},
+                "$or": [{"harvested_at": {"$gte": cutoff}}, {"fetched_at": {"$gte": cutoff}}],
+            },
+            {"_id": 0},
+        )
+        return {d["source_id"]: d for d in docs}
+    except Exception:
+        log.exception("warehouse: cached_details read failed")
+        return {}
+
+
+def cached_history(cfda: list[str], state, fresh_hours: int):
+    """USAspending stats already cached for this CFDA set + state, if fresh."""
+    try:
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=fresh_hours)).isoformat()
+        d = _db().award_history.find_one(
+            {"cfda": sorted(cfda), "state": state or "", "fetched_at": {"$gte": cutoff}}, {"_id": 0}
+        )
+        return HistoricalStats(**d["stats"]) if d and d.get("stats") else None
+    except Exception:
+        log.exception("warehouse: cached_history read failed")
+        return None
 
 
 # ---- read side (used by the GraphQL warehouse queries) ----

@@ -270,10 +270,36 @@ def _prefilter(profile: StartupProfile, opps: list[Opportunity], kw_by_id) -> li
     return [o for o, _ in ranked[:PREFILTER_N]]
 
 
+DETAIL_FIELDS = (
+    "award_floor_usd", "award_ceiling_usd", "estimated_total_funding_usd", "expected_awards",
+    "cost_sharing", "summary", "close_date", "eligibility_flag", "eligible_applicants",
+)
+
+
 async def _attach_details(opps: list[Opportunity]) -> None:
-    ids = [o.source_id.removeprefix("gg-") for o in opps if o.source == "grants_gov"]
-    details = await grants_gov.fetch_details_many(ids)
-    for o in opps:
+    """Warehouse first, network only for gaps. The nightly harvester has already
+    enriched ~900 opportunities into MongoDB; a live match reuses those documents
+    (fresh within FRESH_HOURS) and calls fetchOpportunity only for hits the
+    harvester hasn't seen yet."""
+    gg = [o for o in opps if o.source == "grants_gov"]
+    cached = await asyncio.to_thread(
+        store.cached_details, [o.source_id for o in gg], store.FRESH_HOURS
+    )
+    missing: list[Opportunity] = []
+    for o in gg:
+        doc = cached.get(o.source_id)
+        if doc:
+            for f in DETAIL_FIELDS:
+                if doc.get(f) not in (None, "", []):
+                    setattr(o, f, doc[f])
+        else:
+            missing.append(o)
+    log.info("details: %d from warehouse, %d fetched live", len(gg) - len(missing), len(missing))
+    if not missing:
+        return
+
+    details = await grants_gov.fetch_details_many([o.source_id.removeprefix("gg-") for o in missing])
+    for o in missing:
         d = details.get(o.source_id.removeprefix("gg-"))
         if not d:
             continue
@@ -297,6 +323,11 @@ async def _attach_details(opps: list[Opportunity]) -> None:
 async def _attach_history(opps: list[Opportunity], profile: StartupProfile) -> None:
     async def one(o: Opportunity) -> None:
         if o.source == "grants_gov" and o.cfda:
+            o.history = await asyncio.to_thread(
+                store.cached_history, o.cfda, profile.state, store.FRESH_HOURS
+            )
+            if o.history:
+                return
             o.history = await usaspending.awards_for_cfda(o.cfda, profile.state)
             if o.history:
                 await asyncio.to_thread(store.save_history, o.cfda, profile.state, o.history)
