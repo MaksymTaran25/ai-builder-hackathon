@@ -26,68 +26,47 @@ export default function Confirm({ extract, onRun, onBack }: Props) {
     onRun(p)
   }
 
-  const rows: [string, string | null | undefined][] = [
-    ['Industry', profile.industry],
-    ['Location', profile.state],
-    ['Employees', profile.employees != null ? String(profile.employees) : null],
-    ['Revenue', profile.revenue_usd != null ? fmtUSD(profile.revenue_usd) : null],
-    ['Raised', profile.capital_raised_usd != null ? fmtUSD(profile.capital_raised_usd) : null],
-    [
-      'Seeking',
-      profile.capital_need_max_usd != null
-        ? `${fmtUSD(profile.capital_need_min_usd)} – ${fmtUSD(profile.capital_need_max_usd)}`
-        : null,
-    ],
-    ['Technology', (profile.technology ?? []).join(', ') || null],
-  ]
+  const facts = [
+    profile.industry,
+    profile.state,
+    profile.employees != null ? `${profile.employees} employees` : null,
+    profile.revenue_usd != null ? `${fmtUSD(profile.revenue_usd)} revenue` : null,
+    profile.capital_raised_usd != null ? `${fmtUSD(profile.capital_raised_usd)} raised` : null,
+    profile.capital_need_max_usd != null
+      ? `seeking ${fmtUSD(profile.capital_need_min_usd)}–${fmtUSD(profile.capital_need_max_usd)}`
+      : null,
+  ].filter(Boolean) as string[]
 
   return (
-    <div className="mx-auto max-w-[760px] px-6 pt-20 pb-24">
-      <button onClick={onBack} className="eyebrow mb-8 transition-colors hover:text-ink">
-        ← Edit description
+    <div className="mx-auto max-w-[640px] px-6 pt-28 pb-24">
+      <button onClick={onBack} className="text-[13px] text-ash transition-colors hover:text-ink">
+        ← Edit
       </button>
-      <h2 className="text-[32px] font-medium leading-tight text-ink">Here's what we understood.</h2>
+      <h2 className="mt-6 text-[28px] font-medium leading-tight text-ink">Does this look right?</h2>
 
-      <dl className="mt-8 border-t border-hairline">
-        {rows.map(([k, v]) => (
-          <div key={k} className="grid grid-cols-[140px_1fr] gap-4 border-b border-hairline py-3">
-            <dt className="eyebrow pt-0.5">{k}</dt>
-            <dd className={`text-[15px] ${v ? 'text-ink' : 'text-ash'} ${k !== 'Industry' && k !== 'Technology' ? 'num' : ''}`}>
-              {v ?? 'not stated'}
-            </dd>
-          </div>
-        ))}
-      </dl>
-
-      <p className="mt-6 text-[14px] leading-relaxed text-graphite">{profile.description}</p>
+      <p className="mt-6 text-[17px] leading-relaxed text-ink">{facts.join(' · ')}</p>
 
       {extract.followups.length > 0 && (
-        <div className="mt-10 border-t border-hairline pt-6">
-          <div className="eyebrow">A few quick questions</div>
-          <p className="mt-1 text-[14px] text-graphite">
-            Optional — answering sharpens the match. Skip anything you're unsure of.
-          </p>
-          <div className="mt-5 space-y-5">
-            {extract.followups.map((q) => (
-              <label key={q.field} className="block">
-                <span className="text-[15px] text-ink">{q.question}</span>
-                <input
-                  className="mt-2 w-full border-0 border-b border-hairline bg-transparent px-0 py-2 text-[15px] text-ink outline-none transition-colors focus:border-ink"
-                  value={answers[q.field] ?? ''}
-                  onChange={(e) => setAnswers({ ...answers, [q.field]: e.target.value })}
-                  placeholder="—"
-                />
-              </label>
-            ))}
-          </div>
+        <div className="mt-10 space-y-6">
+          {extract.followups.map((q) => (
+            <label key={q.field} className="block">
+              <span className="text-[15px] text-graphite">{q.question}</span>
+              <input
+                className="mt-1 w-full border-b border-hairline bg-transparent py-2 text-[16px] text-ink outline-none transition-colors focus:border-ink"
+                value={answers[q.field] ?? ''}
+                onChange={(e) => setAnswers({ ...answers, [q.field]: e.target.value })}
+                placeholder="Optional"
+              />
+            </label>
+          ))}
         </div>
       )}
 
       <button
         onClick={apply}
-        className="mt-12 w-full bg-ink py-4 text-[15px] font-medium text-paper transition-opacity hover:opacity-90"
+        className="mt-12 bg-ink px-6 py-3 text-[15px] font-medium text-paper transition-opacity hover:opacity-85"
       >
-        Build my Government Opportunity Map
+        Show my opportunities
       </button>
     </div>
   )

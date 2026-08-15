@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { daysUntil, fmtUSD, type MatchResponse, type Opportunity, type FitTier } from '../api'
 
-const TIER: Record<FitTier, { label: string; fg: string; bg: string }> = {
-  likely_fit: { label: 'Likely fit', fg: 'text-likely', bg: 'bg-likely' },
-  potential_fit: { label: 'Potential fit — verify', fg: 'text-potential', bg: 'bg-potential' },
-  adjacent: { label: 'Adjacent', fg: 'text-adjacent', bg: 'bg-adjacent' },
-  not_a_fit: { label: 'Probably not a fit', fg: 'text-notfit', bg: 'bg-notfit' },
+const TIER: Record<FitTier, { label: string; fg: string; dot: string }> = {
+  likely_fit: { label: 'Likely fit', fg: 'text-likely', dot: 'bg-likely' },
+  potential_fit: { label: 'Potential fit', fg: 'text-potential', dot: 'bg-potential' },
+  adjacent: { label: 'Adjacent', fg: 'text-adjacent', dot: 'bg-adjacent' },
+  not_a_fit: { label: 'Unlikely', fg: 'text-notfit', dot: 'bg-notfit' },
 }
 
 export default function OpportunityMap({ data, onBack }: { data: MatchResponse; onBack: () => void }) {
@@ -14,94 +14,46 @@ export default function OpportunityMap({ data, onBack }: { data: MatchResponse; 
   const utah = data.opportunities.filter((o) => o.source === 'utah')
 
   return (
-    <div className="mx-auto max-w-[760px] px-6 pt-16 pb-32">
+    <div className="mx-auto max-w-[640px] px-6 pt-20 pb-32">
       <div className="flex items-center justify-between print:hidden">
-        <button onClick={onBack} className="eyebrow transition-colors hover:text-ink">
+        <button onClick={onBack} className="text-[13px] text-ash transition-colors hover:text-ink">
           ← Start over
         </button>
-        <button
-          onClick={() => window.print()}
-          className="eyebrow border border-hairline px-3 py-1.5 transition-colors hover:border-ink hover:text-ink"
-        >
-          Export report
+        <button onClick={() => window.print()} className="text-[13px] text-ash transition-colors hover:text-ink">
+          Export
         </button>
       </div>
 
-      <div className="eyebrow mt-10">Your Government Opportunity Map</div>
-      <h2 className="mt-2 text-[32px] font-medium leading-tight text-ink">
-        {federal.length} federal opportunities
-        {utah.length > 0 && <span className="text-graphite"> + {utah.length} Utah programs</span>}
+      <h2 className="mt-8 text-[28px] font-medium leading-tight text-ink">
+        {s.high_potential > 0 ? `${s.high_potential} strong ${s.high_potential === 1 ? 'match' : 'matches'}` : 'Your opportunity map'}
       </h2>
-
-      {/* summary numbers — the heroes */}
-      <div className="mt-8 grid grid-cols-2 gap-px border border-hairline bg-hairline sm:grid-cols-4">
-        <Stat value={String(s.high_potential)} label="High-potential matches" />
-        <Stat value={s.total_potential_value_usd ? `${fmtUSD(s.total_potential_value_usd)}+` : '—'} label="Potential award value" />
-        <Stat value={String(s.agencies)} label="Relevant agencies" />
-        <Stat value={String(s.closing_within_90_days)} label="Closing within 90 days" />
-      </div>
+      <p className="mt-2 text-[15px] text-graphite">
+        {federal.length} federal programs
+        {s.total_potential_value_usd ? ` · ${fmtUSD(s.total_potential_value_usd)}+ potential` : ''}
+        {s.closing_within_90_days ? ` · ${s.closing_within_90_days} closing within 90 days` : ''}
+      </p>
 
       {s.overall_note && (
-        <div className="mt-6 border-l-2 border-ink pl-4">
-          <div className="eyebrow">Honest read</div>
-          <p className="mt-1 text-[15px] leading-relaxed text-ink-2">{s.overall_note}</p>
-        </div>
+        <p className="mt-6 border-l-2 border-ink pl-4 text-[15px] leading-relaxed text-ink-2">{s.overall_note}</p>
       )}
 
-      {data.agency_map.length > 0 && (
-        <section className="mt-12">
-          <div className="eyebrow">Where your people are</div>
-          <div className="mt-3 border-t border-hairline">
-            {data.agency_map.map((a) => (
-              <div key={a.agency} className="grid grid-cols-[1fr_auto] items-baseline gap-4 border-b border-hairline py-2.5">
-                <div className="min-w-0">
-                  <span className="text-[15px] font-medium text-ink">{a.short || a.agency}</span>
-                  {a.agency !== a.short && <span className="ml-2 text-[13px] text-graphite">{a.agency}</span>}
-                </div>
-                <div className="num shrink-0 text-[12px] text-graphite">
-                  {a.open_opportunities > 0 && <span>{a.open_opportunities} open</span>}
-                  {a.open_opportunities > 0 && a.similar_awards_since_2018 > 0 && <span className="text-ash"> · </span>}
-                  {a.similar_awards_since_2018 > 0 && <span>{a.similar_awards_since_2018} similar awards</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="mt-14">
-        <div className="eyebrow">Opportunities, ranked</div>
-        <div className="mt-3 border-t border-hairline">
-          {federal.map((o, i) => (
-            <Card key={o.source_id} o={o} rank={i + 1} />
-          ))}
-        </div>
-      </section>
+      <div className="mt-10 border-t border-hairline">
+        {federal.map((o) => (
+          <Card key={o.source_id} o={o} />
+        ))}
+      </div>
 
       {data.similar_companies.length > 0 && (
-        <section className="mt-14">
-          <div className="eyebrow">Companies like you that got funded</div>
-          <p className="mt-1 text-[14px] text-graphite">
-            SBIR/STTR recipients since 2018 working on similar technology — proof this path works from where you are.
-          </p>
+        <section className="mt-16">
+          <h3 className="text-[13px] font-medium uppercase tracking-wider text-graphite">Companies like you that got funded</h3>
           <div className="mt-3 border-t border-hairline">
-            {data.similar_companies.map((c, i) => (
-              <div key={i} className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-hairline py-3">
-                <div className="min-w-0">
-                  <div className="flex items-baseline gap-2">
-                    <span className="truncate text-[15px] font-medium text-ink">{c.name}</span>
-                    {c.state && (
-                      <span className={`num text-[11px] ${c.state === 'UT' ? 'text-accent' : 'text-ash'}`}>{c.state}</span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 truncate text-[13px] text-graphite">{c.example_title}</div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <div className="num text-[15px] font-medium text-ink">{fmtUSD(c.total_usd)}</div>
-                  <div className="num text-[11px] text-graphite">
-                    {c.awards} award{c.awards > 1 ? 's' : ''} · {c.agency} · {c.latest_year}
-                  </div>
-                </div>
+            {data.similar_companies.slice(0, 5).map((c, i) => (
+              <div key={i} className="flex items-baseline justify-between gap-4 border-b border-hairline py-3">
+                <span className="truncate text-[15px] text-ink">
+                  {c.name}
+                  {c.state && <span className={`num ml-2 text-[11px] ${c.state === 'UT' ? 'text-accent' : 'text-ash'}`}>{c.state}</span>}
+                </span>
+                <span className="num shrink-0 text-[14px] text-graphite">{fmtUSD(c.total_usd)} · {c.agency}</span>
               </div>
             ))}
           </div>
@@ -109,37 +61,33 @@ export default function OpportunityMap({ data, onBack }: { data: MatchResponse; 
       )}
 
       {utah.length > 0 && (
-        <section className="mt-14">
-          <div className="eyebrow">The Utah advantage</div>
-          <p className="mt-1 text-[14px] text-graphite">
-            State programs you can tap alongside — or instead of — federal funding.
-          </p>
+        <section className="mt-16">
+          <h3 className="text-[13px] font-medium uppercase tracking-wider text-graphite">Utah programs</h3>
           <div className="mt-3 border-t border-hairline">
-            {utah.map((o, i) => (
-              <Card key={o.source_id} o={o} rank={federal.length + i + 1} />
+            {utah.map((o) => (
+              <a
+                key={o.source_id}
+                href={o.url ?? '#'}
+                target="_blank"
+                rel="noreferrer"
+                className="block border-b border-hairline py-3 transition-colors hover:bg-paper-2"
+              >
+                <div className="text-[15px] text-ink">{o.title}</div>
+                <div className="mt-0.5 text-[13px] text-graphite">{o.program}</div>
+              </a>
             ))}
           </div>
         </section>
       )}
 
-      <p className="mt-16 max-w-[560px] text-[12px] leading-relaxed text-ash">
-        Assessments are generated guidance from official data, not eligibility determinations.
-        Verify with the official listing and program officer before applying.
+      <p className="mt-16 text-[12px] leading-relaxed text-ash">
+        Guidance from official data, not an eligibility determination. Verify with the listing before applying.
       </p>
     </div>
   )
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="bg-paper p-4">
-      <div className="num text-[30px] font-medium leading-none text-ink">{value}</div>
-      <div className="mt-2 text-[12px] leading-snug text-graphite">{label}</div>
-    </div>
-  )
-}
-
-function Card({ o, rank }: { o: Opportunity; rank: number }) {
+function Card({ o }: { o: Opportunity }) {
   const [open, setOpen] = useState(false)
   const t = TIER[o.fit_tier]
   const days = daysUntil(o.close_date)
@@ -149,122 +97,77 @@ function Card({ o, rank }: { o: Opportunity; rank: number }) {
       : o.award_ceiling_usd || o.award_floor_usd
         ? `up to ${fmtUSD(o.award_ceiling_usd ?? o.award_floor_usd)}`
         : null
+  const oneLine = o.llm_reason || o.explanation?.why_fit || ''
+  const h = o.history
 
   return (
-    <article className="grid grid-cols-[44px_1fr] gap-4 border-b border-hairline py-6">
-      <div className="num pt-1 text-[13px] text-ash">{String(rank).padStart(2, '0')}</div>
-
-      <div className="min-w-0">
-        {/* status line */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${t.fg}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${t.bg}`} />
+    <article className="border-b border-hairline">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="grid w-full grid-cols-[1fr_auto] gap-6 py-5 text-left transition-colors hover:bg-paper-2 -mx-3 px-3"
+      >
+        <div className="min-w-0">
+          <div className={`flex items-center gap-1.5 text-[12px] font-medium ${t.fg}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />
             {t.label}
-          </span>
-          <span className="num text-[12px] text-graphite">{Math.round(o.score)}% match</span>
-          {o.eligibility_flag === 'ok' && o.source === 'grants_gov' && (
-            <span className="text-[12px] text-graphite">Small businesses eligible</span>
-          )}
-          {o.eligibility_flag === 'likely_ineligible' && (
-            <span className="text-[12px] text-notfit">For-profits likely ineligible</span>
-          )}
-          {o.eligibility_flag === 'verify' && (
-            <span className="text-[12px] text-graphite">Verify eligibility</span>
-          )}
-          {days != null && days >= 0 && days <= 90 && (
-            <span className={`num text-[12px] ${days <= 30 ? 'text-notfit' : 'text-potential'}`}>
-              {days === 0 ? 'closes today' : `${days} days left`}
-            </span>
+            {o.eligibility_flag === 'likely_ineligible' && <span className="ml-2 text-notfit">· for-profits likely ineligible</span>}
+          </div>
+          <div className="mt-1.5 text-[17px] font-medium leading-snug text-ink">{o.title}</div>
+          <div className="mt-1 text-[13px] text-graphite">{o.agency}</div>
+          {oneLine && <p className="mt-2 line-clamp-2 text-[14px] leading-relaxed text-ink-2">{oneLine}</p>}
+        </div>
+        <div className="num shrink-0 text-right text-[13px] leading-relaxed text-graphite">
+          {value && <div className="text-ink">{value}</div>}
+          {days != null && days >= 0 && (
+            <div className={days <= 30 ? 'text-notfit' : ''}>{days === 0 ? 'closes today' : `${days}d left`}</div>
           )}
         </div>
+      </button>
 
-        {/* title + agency */}
-        <h3 className="mt-2 text-[18px] font-medium leading-snug text-ink">
-          {o.url ? (
-            <a href={o.url} target="_blank" rel="noreferrer" className="hover:underline hover:decoration-hairline hover:underline-offset-4">
-              {o.title}
-            </a>
-          ) : (
-            o.title
-          )}
-        </h3>
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-3 text-[13px] text-graphite">
-          <span>{o.agency}</span>
-          {o.program && <span className="num text-ash">{o.program}</span>}
-          {value && <span className="num text-ink">{value}</span>}
-          {o.close_date && <span className="num text-ash">closes {o.close_date}</span>}
-        </div>
-
-        {/* analyst verdict */}
-        {o.llm_reason && (
-          <div className="mt-3 border-l-2 border-analyst pl-3">
-            <span className="eyebrow mr-2" style={{ color: 'var(--analyst)' }}>Analyst</span>
-            <span className="text-[14px] leading-relaxed text-ink-2">{o.llm_reason}</span>
-          </div>
-        )}
-
-        {/* explanation grid */}
-        {o.explanation && (
-          <div className="mt-4 grid gap-x-8 gap-y-3 sm:grid-cols-2">
-            <Section title="Why you may fit" text={o.explanation.why_fit} />
-            <Section title="Potential concerns" text={o.explanation.concerns} />
-            <Section title="What to verify" text={o.explanation.verify} />
-            <Section title="Next steps" text={o.explanation.next_steps} />
-          </div>
-        )}
-
-        {/* history */}
-        {o.history && o.history.similar_companies > 0 && (
-          <div className="mt-5 bg-paper-2 p-4">
-            <div className="eyebrow">Who else has received this money</div>
-            <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Mini value={String(o.history.similar_companies)} label="recipients" />
-              <Mini value={fmtUSD(o.history.total_awarded_usd)} label="total awarded" />
-              <Mini value={fmtUSD(o.history.median_award_usd)} label="median award" />
-              <Mini value={String(o.history.in_state_recipients)} label="in your state" />
+      {open && (
+        <div className="space-y-6 pb-7 pl-0 pt-1">
+          {o.explanation && (
+            <div className="space-y-4">
+              <Row title="Why you may fit" text={o.explanation.why_fit} />
+              <Row title="What could disqualify you" text={o.explanation.concerns} />
+              <Row title="Verify before applying" text={o.explanation.verify} />
+              <Row title="Next steps" text={o.explanation.next_steps} />
             </div>
-            {o.history.sample_recipients.length > 0 && (
-              <div className="mt-3 space-y-1 border-t border-hairline pt-3">
-                {o.history.sample_recipients.slice(0, 3).map((r, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_auto] gap-3 text-[13px]">
-                    <span className="truncate text-ink-2">{r.name}</span>
-                    <span className="num shrink-0 text-graphite">{fmtUSD(r.amount)} · {r.year}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+          )}
 
-        {/* synopsis expander */}
-        {o.summary && (
-          <div className="mt-4">
-            <button onClick={() => setOpen(!open)} className="eyebrow transition-colors hover:text-ink">
-              {open ? '− Program description' : '+ Program description'}
-            </button>
-            {open && <p className="mt-2 text-[14px] leading-relaxed text-ink-2">{o.summary}</p>}
-          </div>
-        )}
-      </div>
+          {h && h.similar_companies > 0 && (
+            <div>
+              <div className="text-[12px] font-medium uppercase tracking-wider text-graphite">Who else got this money</div>
+              <p className="num mt-1 text-[14px] text-ink-2">
+                {h.similar_companies} recipients · median {fmtUSD(h.median_award_usd)}
+                {h.in_state_recipients > 0 && ` · ${h.in_state_recipients} in your state`}
+              </p>
+              {h.sample_recipients.length > 0 && (
+                <p className="mt-1 text-[13px] text-graphite">
+                  {h.sample_recipients.slice(0, 3).map((r) => r.name).join(' · ')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {o.url && (
+            <a href={o.url} target="_blank" rel="noreferrer" className="inline-block text-[14px] text-accent underline underline-offset-4">
+              Open official listing
+            </a>
+          )}
+        </div>
+      )}
     </article>
   )
 }
 
-function Section({ title, text }: { title: string; text: string }) {
+function Row({ title, text }: { title: string; text: string }) {
   if (!text) return null
   return (
     <div>
-      <div className="eyebrow">{title}</div>
+      <div className="text-[12px] font-medium uppercase tracking-wider text-graphite">{title}</div>
       <p className="mt-1 text-[14px] leading-relaxed text-ink-2">{text}</p>
-    </div>
-  )
-}
-
-function Mini({ value, label }: { value: string; label: string }) {
-  return (
-    <div>
-      <div className="num text-[20px] font-medium leading-none text-ink">{value}</div>
-      <div className="mt-1 text-[11px] text-graphite">{label}</div>
     </div>
   )
 }

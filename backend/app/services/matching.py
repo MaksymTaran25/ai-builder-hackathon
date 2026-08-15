@@ -289,7 +289,7 @@ async def _attach_details(opps: list[Opportunity]) -> None:
             m = re.match(r"(\d{4})-(\d{2})-(\d{2})", syn["responseDateStr"])
             if m:
                 o.close_date = f"{m.group(2)}/{m.group(3)}/{m.group(1)}"
-        flag, descs = eligibility.evaluate(syn.get("applicantTypes") or [])
+        flag, descs = eligibility.evaluate(syn.get("applicantTypes") or [], o.summary)
         o.eligibility_flag = flag
         o.eligible_applicants = descs[:6]
 

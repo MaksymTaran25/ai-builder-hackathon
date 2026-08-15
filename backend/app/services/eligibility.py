@@ -14,17 +14,47 @@ STARTUP_OK = {"23", "22", "99"}
 AMBIGUOUS = {"25"}
 
 
-def evaluate(applicant_types: list[dict]) -> tuple[str, list[str]]:
-    """Returns (flag, short_descriptions). flag: ok | verify | likely_ineligible."""
+import re
+
+# Phrases in a synopsis that mean "institutions only" even when the applicant-type
+# codes are the vague "Others". The codes are structured but coarse; the prose is
+# the ground truth the program officer actually wrote.
+_INSTITUTION_ONLY = re.compile(
+    r"\b(invites?|open to|limited to|eligible|restricted to|only)\b[^.]{0,80}?"
+    r"\b(academic|research institutions?|institutions? of higher education|universities|"
+    r"colleges|nonprofit organizations? only|state and local governments? only|hospitals? and universities)\b",
+    re.I,
+)
+_SMALL_BIZ_OK = re.compile(
+    r"\b(small business(es)?|for-profit|for profit|commercial (entities|organizations)|"
+    r"sbir|sttr|companies|firms|industry partners?)\b",
+    re.I,
+)
+
+
+def evaluate(applicant_types: list[dict], synopsis: str = "") -> tuple[str, list[str]]:
+    """Returns (flag, short_descriptions). flag: ok | verify | likely_ineligible.
+    Structured applicant-type codes first; the synopsis prose can only tighten
+    the verdict (never loosen it) when it names institutions and not businesses."""
     if not applicant_types:
-        return "verify", []
-    ids = {str(t.get("id")) for t in applicant_types}
-    descs = [_shorten(t.get("description") or "") for t in applicant_types]
-    if ids & STARTUP_OK:
-        return "ok", descs
-    if ids & AMBIGUOUS:
-        return "verify", descs
-    return "likely_ineligible", descs
+        flag, descs = "verify", []
+    else:
+        ids = {str(t.get("id")) for t in applicant_types}
+        descs = [_shorten(t.get("description") or "") for t in applicant_types]
+        if ids & STARTUP_OK:
+            flag = "ok"
+        elif ids & AMBIGUOUS:
+            flag = "verify"
+        else:
+            flag = "likely_ineligible"
+
+    if synopsis and flag != "likely_ineligible":
+        head = synopsis[:1500]
+        if _INSTITUTION_ONLY.search(head) and not _SMALL_BIZ_OK.search(head):
+            flag = "likely_ineligible"
+            if "Institutions (per synopsis)" not in descs:
+                descs = ["Institutions (per synopsis)"] + descs
+    return flag, descs
 
 
 def _shorten(desc: str) -> str:
