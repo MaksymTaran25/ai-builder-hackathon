@@ -58,7 +58,7 @@ builds with SBIR pathways, similar companies, and Utah programs.
   the machine, works on hostile wifi.** Point at the "Analyst" line on a card when asked "where's
   the LLM?".
 - **Stack**: MongoDB (NoSQL document store, weighted text index) + GraphQL API (`/graphql`,
-  GraphiQL explorer works live) with REST fallback. FastAPI + React/TypeScript.
+  GraphiQL explorer works live; GraphQL-only, no REST). FastAPI + React/TypeScript.
 - **Eligibility**: parsed from the official applicantTypes codes on each listing (small business
   = code 23). Framed as guidance, never as a determination.
 - **Why not RAG over everything?** 2-4 sources done deeply beats shallow everything — per the
