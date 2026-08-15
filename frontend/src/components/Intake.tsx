@@ -4,9 +4,10 @@ import { TEST_CASES } from '../testCases'
 
 interface Props {
   onExtracted: (r: ExtractResponse, text: string) => void
+  onExtendedSearch: () => void
 }
 
-export default function Intake({ onExtracted }: Props) {
+export default function Intake({ onExtracted, onExtendedSearch }: Props) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -57,10 +58,19 @@ export default function Intake({ onExtracted }: Props) {
                   </button>
                 ))}
               </div>
-              <button onClick={submit} disabled={busy || !text.trim()} className="btn btn-primary">
-                {busy ? 'Reading…' : 'Continue'}
-                {!busy && <span aria-hidden="true">→</span>}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onExtendedSearch}
+                  className="btn btn-ghost border border-hairline bg-surface"
+                  title="Crawl any funding site and read every subpage"
+                >
+                  Extended search
+                </button>
+                <button onClick={submit} disabled={busy || !text.trim()} className="btn btn-primary">
+                  {busy ? 'Reading…' : 'Continue'}
+                  {!busy && <span aria-hidden="true">→</span>}
+                </button>
+              </div>
             </div>
             {error && <p className="mt-4 text-[14px] text-notfit">{error}</p>}
           </div>

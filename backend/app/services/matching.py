@@ -24,6 +24,7 @@ SIM_FLOOR = 0.58       # similarity floor: every warehouse program above it is r
 ADJACENT_TAIL = 15     # programs just below the floor kept as adjacent context
 MAX_LLM_READS = int(__import__('os').environ.get('MAX_LLM_READS', '400'))  # safety valve only
 MIN_SHOWN = 5      # below this many real fits, adjacent programs fill in
+HISTORY_TOP_N = 15 # award history fetched for the cards shown in full (matches UI TOP_N)
 
 _TIER_ORDER = [FitTier.not_fit, FitTier.adjacent, FitTier.potential, FitTier.likely]
 
@@ -278,7 +279,9 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
         merged.extend(utah.match_programs(profile.description, profile.industry, max_n=3))
 
     # Stage E: history for the top federal cards + explanations for everything
-    await _attach_history(merged, profile)
+    # History (USAspending) only for the cards shown in full — the collapsed tail
+    # doesn't display it, and each lookup is a network/DB round trip.
+    await _attach_history(merged[:HISTORY_TOP_N], profile)
     expl = await asyncio.gather(
         *(
             llm.explain(

@@ -222,6 +222,14 @@ class Query:
         return await asyncio.to_thread(store.stored_award_history, min(limit, 100))
 
     @strawberry.field
+    async def scrape_site(self, url: str, max_pages: int = 25, max_depth: int = 2) -> JSON:
+        """Extended search: recursively crawl a site (agency page, program listing) and
+        return structured pages — titles, meta, headings, text, links."""
+        from .services.scraper import scrape_site_async
+
+        return await scrape_site_async(url, max_pages=min(max_pages, 100), max_depth=min(max_depth, 4))
+
+    @strawberry.field
     async def match_person(self, person: JSON) -> JSON:
         """JSON in -> JSON out for external processes: accepts a person/company
         document in any reasonable shape, normalizes it, runs the full matching

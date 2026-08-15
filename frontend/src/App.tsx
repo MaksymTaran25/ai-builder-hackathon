@@ -4,12 +4,14 @@ import Intake from './components/Intake'
 import Confirm from './components/Confirm'
 import OpportunityMap from './components/OpportunityMap'
 import Logo from './components/Logo'
+import ExtendedSearch from './components/ExtendedSearch'
 
 type View =
   | { name: 'intake' }
   | { name: 'confirm'; extract: ExtractResponse }
   | { name: 'loading' }
   | { name: 'map'; data: MatchResponse }
+  | { name: 'extended' }
   | { name: 'error'; message: string }
 
 export default function App() {
@@ -43,7 +45,13 @@ export default function App() {
         </div>
       </header>
 
-      {view.name === 'intake' && <Intake onExtracted={(extract) => setView({ name: 'confirm', extract })} />}
+      {view.name === 'intake' && (
+        <Intake
+          onExtracted={(extract) => setView({ name: 'confirm', extract })}
+          onExtendedSearch={() => setView({ name: 'extended' })}
+        />
+      )}
+      {view.name === 'extended' && <ExtendedSearch onBack={() => setView({ name: 'intake' })} />}
       {view.name === 'confirm' && (
         <Confirm extract={view.extract} onRun={runMatch} onBack={() => setView({ name: 'intake' })} />
       )}
