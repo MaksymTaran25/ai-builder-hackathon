@@ -340,26 +340,48 @@ def _similar_companies(rows, state) -> list[SimilarCompany]:
     return out
 
 
+# Grants.gov and SBIR.gov name the same agencies differently; fold them so the
+# agency map shows one row per real agency (NIH rolls up under HHS, etc.).
+_AGENCY_CANON = [
+    (("national institutes of health", "hhs", "health and human services", "food and drug", "cdc", "ahrq", "hrsa", "national coordinator", "onc", "samhsa", "cms"), "HHS", "Health and Human Services (incl. NIH, FDA, CDC)"),
+    (("national science foundation", "nsf"), "NSF", "National Science Foundation"),
+    (("department of defense", "department of war", "dod", "dow", "army", "navy", "air force", "darpa", "defense"), "DOD", "Department of Defense"),
+    (("department of energy", "doe", "office of science", "national energy technology", "arpa-e"), "DOE", "Department of Energy"),
+    (("environmental protection", "epa"), "EPA", "Environmental Protection Agency"),
+    (("homeland security", "dhs", "cisa"), "DHS", "Department of Homeland Security"),
+    (("aeronautics and space", "nasa"), "NASA", "NASA"),
+    (("agriculture", "usda", "nifa"), "USDA", "Department of Agriculture"),
+    (("department of commerce", "nist", "noaa", "economic development administration", "eda"), "DOC", "Department of Commerce (incl. NIST, EDA)"),
+    (("bureau of reclamation", "department of the interior", "interior", "usbr"), "DOI", "Department of the Interior"),
+    (("department of education", "ed "), "ED", "Department of Education"),
+    (("department of labor", "dol"), "DOL", "Department of Labor"),
+    (("department of transportation", "dot", "fhwa", "faa"), "DOT", "Department of Transportation"),
+    (("small business administration", "sba"), "SBA", "Small Business Administration"),
+]
+
+
+def _canon_agency(name: str) -> tuple[str, str]:
+    low = f" {(name or '').lower()} "
+    for needles, short, full in _AGENCY_CANON:
+        if any(f" {n} " in low or low.strip().startswith(n) or n in low for n in needles):
+            return short, full
+    return sbir._short_agency(name), name
+
+
 def _agency_map(opps: list[Opportunity], sbir_rows) -> list[AgencyMapEntry]:
     entries: dict[str, AgencyMapEntry] = {}
     for o in opps:
         if o.source not in ("grants_gov", "sbir") or not o.agency:
             continue
-        e = entries.setdefault(
-            o.agency, AgencyMapEntry(agency=o.agency, short=sbir._short_agency(o.agency))
-        )
+        short, full = _canon_agency(o.agency)
+        e = entries.setdefault(short, AgencyMapEntry(agency=full, short=short))
         e.open_opportunities += 1
         if not e.note and o.fit_tier == FitTier.likely:
             e.note = f"e.g. {o.title[:70]}"
     for r in sbir_rows:
-        if r["agency"] in entries:
-            entries[r["agency"]].similar_awards_since_2018 += 1
-        else:
-            e = entries.setdefault(
-                r["agency"],
-                AgencyMapEntry(agency=r["agency"], short=sbir._short_agency(r["agency"])),
-            )
-            e.similar_awards_since_2018 += 1
+        short, full = _canon_agency(r.get("agency") or "")
+        e = entries.setdefault(short, AgencyMapEntry(agency=full, short=short))
+        e.similar_awards_since_2018 += 1
     ranked = sorted(
         entries.values(),
         key=lambda e: (e.open_opportunities, e.similar_awards_since_2018),
@@ -439,7 +461,7 @@ def _summarize(opps: list[Opportunity], overall_note: str) -> MatchSummary:
     return MatchSummary(
         high_potential=sum(1 for o in opps if o.fit_tier == FitTier.likely),
         total_potential_value_usd=total_value,
-        agencies=len({o.agency for o in opps if o.agency}),
+        agencies=len({_canon_agency(o.agency)[0] for o in opps if o.agency and o.source != 'utah'}),
         closing_within_90_days=closing_soon,
         overall_note=overall_note,
     )

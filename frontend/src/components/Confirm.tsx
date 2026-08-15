@@ -7,10 +7,8 @@ interface Props {
   onBack: () => void
 }
 
-const chip = 'rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600'
-
 export default function Confirm({ extract, onRun, onBack }: Props) {
-  const [profile, setProfile] = useState<StartupProfile>(extract.profile)
+  const [profile] = useState<StartupProfile>(extract.profile)
   const [answers, setAnswers] = useState<Record<string, string>>({})
 
   const apply = () => {
@@ -25,50 +23,59 @@ export default function Confirm({ extract, onRun, onBack }: Props) {
       } else if (field === 'state') p.state = v.length === 2 ? v.toUpperCase() : v
       else (p as Record<string, unknown>)[field] = v
     }
-    setProfile(p)
     onRun(p)
   }
 
+  const rows: [string, string | null | undefined][] = [
+    ['Industry', profile.industry],
+    ['Location', profile.state],
+    ['Employees', profile.employees != null ? String(profile.employees) : null],
+    ['Revenue', profile.revenue_usd != null ? fmtUSD(profile.revenue_usd) : null],
+    ['Raised', profile.capital_raised_usd != null ? fmtUSD(profile.capital_raised_usd) : null],
+    [
+      'Seeking',
+      profile.capital_need_max_usd != null
+        ? `${fmtUSD(profile.capital_need_min_usd)} – ${fmtUSD(profile.capital_need_max_usd)}`
+        : null,
+    ],
+    ['Technology', (profile.technology ?? []).join(', ') || null],
+  ]
+
   return (
-    <div className="mx-auto max-w-3xl px-6 pt-16 pb-16">
-      <button onClick={onBack} className="mb-6 text-sm text-slate-400 hover:text-slate-600">
+    <div className="mx-auto max-w-[760px] px-6 pt-20 pb-24">
+      <button onClick={onBack} className="eyebrow mb-8 transition-colors hover:text-ink">
         ← Edit description
       </button>
-      <h2 className="text-2xl font-bold text-slate-900">Here's what we understood</h2>
+      <h2 className="text-[32px] font-medium leading-tight text-ink">Here's what we understood.</h2>
 
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {profile.industry && <span className={chip}>{profile.industry}</span>}
-          {profile.state && <span className={chip}>📍 {profile.state}</span>}
-          {profile.employees != null && <span className={chip}>{profile.employees} employees</span>}
-          {profile.revenue_usd != null && <span className={chip}>{fmtUSD(profile.revenue_usd)} revenue</span>}
-          {profile.capital_raised_usd != null && <span className={chip}>{fmtUSD(profile.capital_raised_usd)} raised</span>}
-          {profile.capital_need_max_usd != null && (
-            <span className={chip}>
-              seeking {fmtUSD(profile.capital_need_min_usd)}–{fmtUSD(profile.capital_need_max_usd)}
-            </span>
-          )}
-          {(profile.technology ?? []).map((t) => (
-            <span key={t} className={chip}>{t}</span>
-          ))}
-        </div>
-        <p className="mt-4 text-sm leading-relaxed text-slate-500">{profile.description}</p>
-      </div>
+      <dl className="mt-8 border-t border-hairline">
+        {rows.map(([k, v]) => (
+          <div key={k} className="grid grid-cols-[140px_1fr] gap-4 border-b border-hairline py-3">
+            <dt className="eyebrow pt-0.5">{k}</dt>
+            <dd className={`text-[15px] ${v ? 'text-ink' : 'text-ash'} ${k !== 'Industry' && k !== 'Technology' ? 'num' : ''}`}>
+              {v ?? 'not stated'}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      <p className="mt-6 text-[14px] leading-relaxed text-graphite">{profile.description}</p>
 
       {extract.followups.length > 0 && (
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6">
-          <div className="mb-3 text-sm font-semibold text-amber-900">
-            A few quick questions to sharpen your matches
-          </div>
-          <div className="space-y-3">
+        <div className="mt-10 border-t border-hairline pt-6">
+          <div className="eyebrow">A few quick questions</div>
+          <p className="mt-1 text-[14px] text-graphite">
+            Optional — answering sharpens the match. Skip anything you're unsure of.
+          </p>
+          <div className="mt-5 space-y-5">
             {extract.followups.map((q) => (
               <label key={q.field} className="block">
-                <span className="text-sm text-amber-800">{q.question}</span>
+                <span className="text-[15px] text-ink">{q.question}</span>
                 <input
-                  className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400"
+                  className="mt-2 w-full border-0 border-b border-hairline bg-transparent px-0 py-2 text-[15px] text-ink outline-none transition-colors focus:border-ink"
                   value={answers[q.field] ?? ''}
                   onChange={(e) => setAnswers({ ...answers, [q.field]: e.target.value })}
-                  placeholder="Optional — skip if unsure"
+                  placeholder="—"
                 />
               </label>
             ))}
@@ -78,9 +85,9 @@ export default function Confirm({ extract, onRun, onBack }: Props) {
 
       <button
         onClick={apply}
-        className="mt-8 w-full rounded-xl bg-blue-600 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+        className="mt-12 w-full bg-ink py-4 text-[15px] font-medium text-paper transition-opacity hover:opacity-90"
       >
-        Build my Government Opportunity Map →
+        Build my Government Opportunity Map
       </button>
     </div>
   )
