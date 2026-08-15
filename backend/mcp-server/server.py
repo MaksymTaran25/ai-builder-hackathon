@@ -4,10 +4,10 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse, urljoin
 import httpx
 from bs4 import BeautifulSoup
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-# Initialize FastMCP Server
-mcp = FastMCP("mcp-website-scraper")
+# Initialize MCP Server
+mcp = MCPServer("mcp-website-scraper")
 
 def normalize_url(raw_url: str, base_url: str = None) -> str:
     """Normalizes a URL by resolving relative paths and stripping fragments."""
@@ -131,7 +131,7 @@ async def scrape_site_async(start_url: str, max_pages: int = 50, max_depth: int 
                 })
 
     return {
-        "base_url": normalizedStart if 'normalizedStart' in locals() else normalized_start,
+        "base_url": normalized_start,
         "scraped_at": datetime.now(timezone.utc).isoformat(),
         "total_pages_scraped": len(scraped_pages),
         "options": {
@@ -143,7 +143,10 @@ async def scrape_site_async(start_url: str, max_pages: int = 50, max_depth: int 
         "errors": errors
     }
 
-@mcp.tool()
+@mcp.tool(
+    name="scrape_website",
+    description="Scrapes a target website URL and recursively crawls all subpages, returning structured JSON content."
+)
 async def scrape_website(url: str, max_pages: int = 50, max_depth: int = 3, include_external: bool = False) -> str:
     """Scrapes a target website URL and recursively crawls all subpages, returning structured JSON content."""
     result = await scrape_site_async(url, max_pages=max_pages, max_depth=max_depth, include_external=include_external)
