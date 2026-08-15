@@ -42,6 +42,43 @@ SYSTEM = (
 )
 
 _backend: Optional[str] = None  # "mlx" | "ollama" | "none"
+
+
+def _cache_key(profile_text: str, cand: dict) -> str:
+    """A verdict is a pure function of (profile, program text) — cache it in Mongo so
+    repeated matches for similar companies skip the GPU entirely."""
+    import hashlib
+
+    blob = "|".join([
+        MLX_MODEL, profile_text, str(cand.get("source_id")), (cand.get("summary") or "")[:1200],
+        ",".join(cand.get("eligible_applicants") or []),
+    ])
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def _cache_get(keys: list[str]) -> dict[str, dict]:
+    try:
+        from .store import _db
+
+        return {d["_id"]: d["verdict"] for d in _db().llm_verdicts.find({"_id": {"$in": keys}})}
+    except Exception:
+        return {}
+
+
+def _cache_put(items: dict[str, dict]) -> None:
+    if not items:
+        return
+    try:
+        from datetime import datetime, timezone
+
+        from .store import _db
+
+        col = _db().llm_verdicts
+        now = datetime.now(timezone.utc).isoformat()
+        for k, v in items.items():
+            col.update_one({"_id": k}, {"$set": {"verdict": v, "model": MLX_MODEL, "at": now}}, upsert=True)
+    except Exception:
+        log.exception("llm verdict cache write failed")
 _mlx = None  # (model, tokenizer)
 _mlx_lock = threading.Lock()  # MLX generation is not thread-safe; serialize calls
 _init_lock = threading.Lock()
@@ -180,9 +217,15 @@ async def judge(profile: StartupProfile, candidates: list[dict]) -> dict[str, di
     profile_text = json.dumps(
         {k: v for k, v in profile.model_dump().items() if v not in (None, "", [])}, ensure_ascii=False
     )
+    keys = {c["source_id"]: _cache_key(profile_text, c) for c in candidates}
+    cached = await asyncio.to_thread(_cache_get, list(keys.values()))
+    out: dict[str, dict] = {c["source_id"]: cached[keys[c["source_id"]]] for c in candidates if keys[c["source_id"]] in cached}
+    todo = [c for c in candidates if c["source_id"] not in out]
+    log.info("llm judge: %d cached, %d to run", len(out), len(todo))
+
     # MLX serializes on the GPU anyway; Ollama benefits from a little parallelism
     if backend == "mlx":
-        results = [await asyncio.to_thread(_judge_sync, profile_text, c) for c in candidates]
+        results = [await asyncio.to_thread(_judge_sync, profile_text, c) for c in todo]
     else:
         sem = asyncio.Semaphore(4)
 
@@ -190,5 +233,8 @@ async def judge(profile: StartupProfile, candidates: list[dict]) -> dict[str, di
             async with sem:
                 return await asyncio.to_thread(_judge_sync, profile_text, c)
 
-        results = await asyncio.gather(*(run(c) for c in candidates))
-    return {c["source_id"]: v for c, v in zip(candidates, results) if v}
+        results = await asyncio.gather(*(run(c) for c in todo))
+    fresh = {c["source_id"]: v for c, v in zip(todo, results) if v}
+    await asyncio.to_thread(_cache_put, {keys[sid]: v for sid, v in fresh.items()})
+    out.update(fresh)
+    return out

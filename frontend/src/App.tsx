@@ -79,25 +79,33 @@ function Step({ n, label, active, done }: { n: number; label: string; active: bo
   )
 }
 
-const STEPS = [
-  'Searching live federal opportunities',
-  'Reading each program against your company',
-  'Pulling award history',
-  'Ranking your matches',
+// step label + roughly how long it takes; the LLM read is the long one
+const STEPS: [string, number][] = [
+  ['Searching live federal opportunities', 1200],
+  ['Reading each program against your company — a local model, no API calls', 5500],
+  ['Pulling award history', 800],
+  ['Ranking your matches', 800],
 ]
 
 function Loading() {
   const [step, setStep] = useState(0)
   useEffect(() => {
-    const id = setInterval(() => setStep((s) => Math.min(s + 1, STEPS.length - 1)), 2000)
-    return () => clearInterval(id)
+    let i = 0
+    let t: ReturnType<typeof setTimeout>
+    const next = () => {
+      i = Math.min(i + 1, STEPS.length - 1)
+      setStep(i)
+      if (i < STEPS.length - 1) t = setTimeout(next, STEPS[i][1])
+    }
+    t = setTimeout(next, STEPS[0][1])
+    return () => clearTimeout(t)
   }, [])
   return (
     <div className="mx-auto max-w-[520px] px-6 pt-32">
       <div className="card p-8">
         <div className="text-[12px] uppercase tracking-wider text-ash">Building your map</div>
         <ul className="mt-4 space-y-3">
-          {STEPS.map((s, i) => (
+          {STEPS.map(([s], i) => (
             <li key={s} className={`flex items-center gap-3 text-[15px] ${i <= step ? 'text-ink' : 'text-ash'}`}>
               <span
                 className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${

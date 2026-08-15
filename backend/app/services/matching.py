@@ -21,7 +21,7 @@ from . import eligibility, grants_gov, llm, local_llm, sbir, store, usaspending,
 log = logging.getLogger(__name__)
 
 PREFILTER_N = 24   # candidates that get full details fetched
-LLM_JUDGE_N = 14   # top candidates the local LLM reads in full
+LLM_JUDGE_N = 12   # top candidates the local LLM reads in full
 MAX_RETURNED = 10
 HISTORY_TOP_N = 8  # opportunities that get USAspending history
 
@@ -139,6 +139,13 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
             for o in judged_set
         ],
     )
+    judged_ids = {sid for sid in verdicts}
+    # A program the LLM never read cannot be a confident recommendation: cap it at
+    # potential so un-vetted programs can't out-rank vetted ones just by being unread.
+    if verdicts:
+        for o in opps:
+            if o.source_id not in judged_ids and o.fit_tier == FitTier.likely:
+                o.fit_tier = FitTier.potential
     for o in judged_set:
         v = verdicts.get(o.source_id)
         if not v:
