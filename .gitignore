@@ -8,3 +8,4 @@ dist/
 *.npy
 .DS_Store
 **/data/raw/
+backend/data/logs/

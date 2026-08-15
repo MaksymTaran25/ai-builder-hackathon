@@ -86,18 +86,38 @@ def save_match_run(profile: StartupProfile, result: MatchResponse) -> None:
 
 # ---- read side (used by the GraphQL warehouse queries) ----
 
-def stored_opportunities(search: Optional[str], limit: int) -> list[dict]:
+def stored_opportunities(
+    search: Optional[str],
+    limit: int,
+    domain: Optional[str] = None,
+    eligibility: Optional[str] = None,
+    agency: Optional[str] = None,
+) -> list[dict]:
     try:
         q: dict = {}
         if search:
-            q = {"$or": [
+            q["$or"] = [
                 {"title": {"$regex": search, "$options": "i"}},
                 {"agency": {"$regex": search, "$options": "i"}},
                 {"summary": {"$regex": search, "$options": "i"}},
-            ]}
-        return list(_db().opportunities.find(q, {"_id": 0}).sort("fetched_at", -1).limit(limit))
+            ]
+        if domain:
+            q["domains"] = domain
+        if eligibility:
+            q["eligibility_flag"] = eligibility
+        if agency:
+            q["agency"] = {"$regex": agency, "$options": "i"}
+        return list(_db().opportunities.find(q, {"_id": 0}).sort("close_date", 1).limit(limit))
     except Exception:
         log.exception("warehouse: stored_opportunities read failed")
+        return []
+
+
+def harvest_runs(limit: int) -> list[dict]:
+    try:
+        return list(_db().harvest_runs.find({}, {"_id": 0}).sort("started_at", -1).limit(limit))
+    except Exception:
+        log.exception("warehouse: harvest_runs read failed")
         return []
 
 

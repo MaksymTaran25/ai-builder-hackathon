@@ -81,6 +81,24 @@ brew install ollama && brew services start ollama && ollama pull qwen3:4b
 
 (`services/llm.py` also holds a dormant Claude seam behind `ANTHROPIC_API_KEY`; unused.)
 
+## Nightly harvester (Server 1's "smart scraper")
+
+`app/ingest/harvest.py` sweeps Grants.gov across 15 domains (74 keyword searches), enriches
+every opportunity (synopsis, award data, applicant-type eligibility, deadlines), tags it with
+domains, and upserts into `govmatch.opportunities` — ~900 documents in ~17s. Runs **every
+midnight** via launchd and logs each run to `harvest_runs`.
+
+```bash
+uv run python -m app.ingest.harvest              # run once now
+bash scripts/install_nightly.sh                  # install the 00:00 daily job (launchd, survives reboots)
+bash scripts/install_nightly.sh run-now          # trigger the scheduled job immediately
+bash scripts/install_nightly.sh uninstall
+```
+
+Downstream processes query the warehouse via GraphQL, e.g.
+`{ stored_opportunities(domain: "cybersecurity", eligibility: "ok", limit: 50) }` or
+`{ harvest_runs(limit: 5) }` — or read the `govmatch` MongoDB directly (read-only).
+
 ## Data sources
 
 | Source | How we use it |

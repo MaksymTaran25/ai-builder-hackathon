@@ -148,6 +148,9 @@ try:
     check("match_runs recorded", len(w["match_runs"]) > 0)
     check("award_history cached", len(w["award_history"]) > 0)
     check("sbir corpus queryable", len(w["sbir_awards"]) > 0)
+    hv = gql("query { harvest_runs(limit: 1) stored_opportunities(domain: \"cybersecurity\", limit: 200) }", {})
+    check("harvester has run", len(hv["harvest_runs"]) > 0)
+    check("warehouse stocked (>=100 cyber-domain docs)", len(hv["stored_opportunities"]) >= 100, str(len(hv["stored_opportunities"])))
     check(
         "sbir state filter works",
         all(a["state"] == "UT" for a in w["sbir_awards"]),

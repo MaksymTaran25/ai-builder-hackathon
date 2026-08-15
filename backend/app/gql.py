@@ -163,11 +163,30 @@ class Query:
     # ---- warehouse reads: any process can query the stored government data ----
 
     @strawberry.field
-    async def stored_opportunities(self, search: Optional[str] = None, limit: int = 20) -> JSON:
-        """Grants.gov opportunities previously fetched + enriched (from MongoDB)."""
+    async def stored_opportunities(
+        self,
+        search: Optional[str] = None,
+        domain: Optional[str] = None,
+        eligibility: Optional[str] = None,
+        agency: Optional[str] = None,
+        limit: int = 20,
+    ) -> JSON:
+        """Harvested + enriched Grants.gov opportunities (from MongoDB).
+        domain: healthcare|ai|software|manufacturing|aerospace_defense|energy|water_environment|
+        cybersecurity|biotech|agriculture|education_workforce|community|transportation|
+        sensors_iot|quantum_semiconductors. eligibility: ok|verify|likely_ineligible."""
         import asyncio
 
-        return await asyncio.to_thread(store.stored_opportunities, search, min(limit, 200))
+        return await asyncio.to_thread(
+            store.stored_opportunities, search, min(limit, 500), domain, eligibility, agency
+        )
+
+    @strawberry.field
+    async def harvest_runs(self, limit: int = 10) -> JSON:
+        """Nightly harvester run log: when it ran, how many found/enriched, per-domain counts."""
+        import asyncio
+
+        return await asyncio.to_thread(store.harvest_runs, min(limit, 100))
 
     @strawberry.field
     async def sbir_awards(
