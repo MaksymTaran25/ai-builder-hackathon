@@ -66,6 +66,7 @@ export interface Opportunity {
   summary: string
   score: number
   fit_tier: FitTier
+  llm_reason: string
   explanation?: Explanation | null
   history?: HistoricalStats | null
 }
@@ -120,7 +121,7 @@ const PROFILE_FIELDS = `description industry technology city state employees rev
 
 const OPPORTUNITY_FIELDS = `source source_id title agency agency_code program status cfda
   open_date close_date award_floor_usd award_ceiling_usd estimated_total_funding_usd
-  expected_awards cost_sharing eligibility_flag eligible_applicants url summary score fit_tier
+  expected_awards cost_sharing eligibility_flag eligible_applicants url summary score fit_tier llm_reason
   explanation { why_fit concerns verify next_steps }
   history { similar_companies total_awarded_usd median_award_usd in_state_recipients
     sample_recipients { name agency program amount year } }`

@@ -90,6 +90,7 @@ class Opportunity(BaseModel):
     summary: str = ""
     score: float = 0  # 0-100 relevance
     fit_tier: FitTier = FitTier.adjacent
+    llm_reason: str = ""  # local LLM's one-line relevance verdict, when judged
     explanation: Optional[Explanation] = None
     history: Optional[HistoricalStats] = None
 

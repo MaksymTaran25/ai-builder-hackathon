@@ -95,6 +95,7 @@ class Opportunity:
     summary: str
     score: float
     fit_tier: str  # REST-parity string values: likely_fit | potential_fit | adjacent | not_a_fit
+    llm_reason: str
     explanation: Optional[Explanation]
     history: Optional[HistoricalStats]
 
@@ -109,6 +110,7 @@ class Opportunity:
             expected_awards=o.expected_awards, cost_sharing=o.cost_sharing,
             eligibility_flag=o.eligibility_flag, eligible_applicants=o.eligible_applicants,
             url=o.url, summary=o.summary, score=o.score, fit_tier=o.fit_tier.value,
+            llm_reason=o.llm_reason,
             explanation=Explanation.from_pydantic(o.explanation) if o.explanation else None,
             history=HistoricalStats.from_model(o.history) if o.history else None,
         )

@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .gql import router as graphql_router
-from .services import llm
+from .services import llm, local_llm
 
 logging.basicConfig(level=logging.INFO)
 
@@ -22,9 +22,11 @@ app = FastAPI(title="GovMatch", version="0.2.0")
 async def _warmup():
     import asyncio
 
-    from .services import embeddings
+    from .services import embeddings, local_llm
 
-    asyncio.get_event_loop().run_in_executor(None, embeddings.warmup)
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, embeddings.warmup)
+    loop.run_in_executor(None, local_llm.warmup)  # MLX model load (~30s, once)
 
 
 app.add_middleware(
@@ -39,4 +41,10 @@ app.include_router(graphql_router)  # GraphQL at /graphql
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "llm_provider": llm.provider(), "api": "graphql", "endpoint": "/graphql"}
+    return {
+        "ok": True,
+        "relevance_judge": local_llm.provider_name(),
+        "extraction": llm.provider(),
+        "api": "graphql",
+        "endpoint": "/graphql",
+    }

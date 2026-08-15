@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "fastembed>=0.8.0",
     "httpx>=0.28.1",
+    "mlx-lm>=0.31.3",
     "pydantic-settings>=2.15.0",
     "pymongo>=4.17.0",
     "python-dotenv>=1.2.2",

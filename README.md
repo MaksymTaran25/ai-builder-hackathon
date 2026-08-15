@@ -57,16 +57,29 @@ npm install
 npm run dev        # http://localhost:5173, proxies /api to :8000
 ```
 
-### Intelligence layer — no API keys, by design
+### Intelligence layer — local LLM, no API keys
 
-Everything runs locally: fastembed embeddings (bge-small) for semantic matching, a curated
-startup→government translation table, and deterministic gates parsed from official data
-(applicant-type eligibility codes, an R&D-requirement check for SBIR, a foreign-affairs
-program filter). Zero keys, zero per-request cost, nothing leaves the machine, and results
-are identical on every run — what you rehearse is what judges see.
+Retrieval + judgment, all on-device:
 
-(`services/llm.py` contains a dormant Claude seam behind `ANTHROPIC_API_KEY` for anyone who
-wants to experiment later; the shipped product does not use it.)
+1. **Retrieval** — fastembed embeddings (bge-small) rank live Grants.gov hits and the SBIR corpus.
+2. **Judgment** — a local LLM (**Qwen3-4B via MLX** on Apple Silicon, ~0.6s per program) reads
+   each shortlisted program's actual synopsis and applicant list against the startup profile and
+   returns a structured verdict: relevance, fit tier, one-line reason (shown on the card as
+   "Analyst"), and whether a for-profit could apply. Blended 55/45 with the embedding score; the
+   LLM can veto or move a tier by one notch, and the parsed applicant-type code stays authoritative.
+3. **Deterministic gates** — eligibility codes, R&D requirement for SBIR, foreign-affairs and
+   sector-mismatch filters, an honesty banner when nothing scores strongly.
+
+Backends: MLX → Ollama (`qwen3:4b`, if MLX unavailable) → embeddings+rules. Zero keys, zero
+per-request cost, nothing leaves the machine. Check which is active: `GET /api/health`.
+
+```bash
+# MLX model downloads on first start (~2.5GB, once). Optional Ollama fallback:
+brew install ollama && brew services start ollama && ollama pull qwen3:4b
+# disable the judge entirely: LOCAL_LLM=off
+```
+
+(`services/llm.py` also holds a dormant Claude seam behind `ANTHROPIC_API_KEY`; unused.)
 
 ## Data sources
 

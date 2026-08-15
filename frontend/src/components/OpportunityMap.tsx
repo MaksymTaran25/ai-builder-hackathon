@@ -205,6 +205,14 @@ function OppCard({ o, rank }: { o: Opportunity; rank: number }) {
             {o.agency}
             {o.program && <span className="text-slate-400"> · {o.program}</span>}
           </div>
+          {o.llm_reason && (
+            <div className="mt-2 flex items-start gap-1.5 text-[13px] leading-snug text-slate-600">
+              <span className="mt-px shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 ring-1 ring-violet-200">
+                Analyst
+              </span>
+              <span className="italic">{o.llm_reason}</span>
+            </div>
+          )}
           {statBits.length > 0 && (
             <div className="mt-1.5 text-xs text-slate-400">{statBits.join(' · ')}</div>
           )}

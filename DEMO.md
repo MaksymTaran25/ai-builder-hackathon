@@ -7,7 +7,8 @@ cd backend && uv run uvicorn app.main:app --port 8000
 # terminal 2
 cd frontend && npm run dev
 ```
-Open http://localhost:5173. **No API keys — that's deliberate.** All intelligence runs
+Open http://localhost:5173. **No API keys — that's deliberate.** First backend start
+loads the MLX model (~30s) — start it before judges arrive; `/api/health` shows `mlx:` when ready. All intelligence runs
 locally (embeddings + rules over official government data). Sanity check before judging:
 `cd backend && uv run python scripts/verify.py` — must end `0 failed`.
 
@@ -50,10 +51,12 @@ builds with SBIR pathways, similar companies, and Utah programs.
 
 ## Q&A ammo
 - **Data**: Grants.gov search2 + fetchOpportunity (live), SBIR bulk awards 2018+ (39.8K, local MongoDB text index), USAspending v2 by CFDA (live), curated Utah programs. All official, all free, no keys.
-- **AI layer**: fully local — semantic embeddings (bge-small) + a startup→government
-  translation table + deterministic gates (eligibility codes, R&D requirement, foreign-affairs
-  filter). **Zero API keys, zero per-request cost, zero data leaves the machine, works on
-  hostile wifi.** An LLM seam exists in the code if a team ever wants it; we chose not to need it.
+- **AI layer**: fully local — embeddings retrieve, a **local LLM (Qwen3-4B on MLX, Apple's
+  ML framework) reads every shortlisted program's synopsis and judges real relevance** with a
+  one-line "Analyst" reason on each card; deterministic gates (eligibility codes, R&D requirement,
+  foreign-affairs filter) keep it honest. **Zero API keys, zero per-request cost, zero data leaves
+  the machine, works on hostile wifi.** Point at the "Analyst" line on a card when asked "where's
+  the LLM?".
 - **Stack**: MongoDB (NoSQL document store, weighted text index) + GraphQL API (`/graphql`,
   GraphiQL explorer works live) with REST fallback. FastAPI + React/TypeScript.
 - **Eligibility**: parsed from the official applicantTypes codes on each listing (small business

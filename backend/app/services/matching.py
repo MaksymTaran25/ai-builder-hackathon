@@ -16,13 +16,28 @@ from ..models import (
     SimilarCompany,
     StartupProfile,
 )
-from . import eligibility, grants_gov, llm, sbir, store, usaspending, utah
+from . import eligibility, grants_gov, llm, local_llm, sbir, store, usaspending, utah
 
 log = logging.getLogger(__name__)
 
 PREFILTER_N = 24   # candidates that get full details fetched
+LLM_JUDGE_N = 14   # top candidates the local LLM reads in full
 MAX_RETURNED = 10
 HISTORY_TOP_N = 8  # opportunities that get USAspending history
+
+_TIER_ORDER = [FitTier.not_fit, FitTier.adjacent, FitTier.potential, FitTier.likely]
+
+
+def _reconcile_tier(embedding_tier: FitTier, llm_tier: FitTier) -> FitTier:
+    """LLM verdict vs embedding tier: outright not_a_fit is a veto; otherwise the LLM
+    may move the tier by at most one step in either direction (a 4B model's opinion
+    should refine the ranking, not replace it)."""
+    if llm_tier == FitTier.not_fit:
+        return llm_tier
+    e, l = _TIER_ORDER.index(embedding_tier), _TIER_ORDER.index(llm_tier)
+    if l < e:
+        return _TIER_ORDER[max(e - 1, l)]
+    return _TIER_ORDER[min(e + 1, l)]
 
 
 def _parse_date(s: str | None):
@@ -91,6 +106,40 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
     for o in opps:
         if o.source_id in scores:
             o.score, o.fit_tier, _ = scores[o.source_id]
+
+    # Stage C2: local LLM (MLX, offline) reads each synopsis and judges real relevance.
+    # Blend: 55% LLM verdict, 45% embedding score. Tier: the LLM can demote by one
+    # notch, veto outright with not_a_fit, and promote by at most one; the parsed
+    # applicant-type code (authoritative) overrides its "can't apply" guess.
+    opps.sort(key=lambda o: o.score, reverse=True)
+    judged_set = opps[:LLM_JUDGE_N]
+    verdicts = await local_llm.judge(
+        profile,
+        [
+            {
+                "source_id": o.source_id, "title": o.title, "agency": o.agency,
+                "summary": o.summary, "eligible_applicants": o.eligible_applicants,
+            }
+            for o in judged_set
+        ],
+    )
+    for o in judged_set:
+        v = verdicts.get(o.source_id)
+        if not v:
+            continue
+        o.llm_reason = str(v.get("reason") or "")[:300]
+        rel = float(v.get("relevance") or 0)
+        o.score = round(0.55 * rel + 0.45 * o.score, 1)
+        llm_tier = FitTier(v.get("fit_tier")) if v.get("fit_tier") in FitTier._value2member_map_ else None
+        if llm_tier is not None:
+            o.fit_tier = _reconcile_tier(o.fit_tier, llm_tier)
+        # "can't apply" from the model only counts when the official applicant list agrees
+        if (
+            not v.get("startup_can_apply", True)
+            and o.eligibility_flag != "ok"
+            and o.fit_tier == FitTier.likely
+        ):
+            o.fit_tier = FitTier.potential
 
     # Stage D: eligibility gate — a program that can't fund a for-profit startup is
     # adjacent intelligence, not a recommendation
