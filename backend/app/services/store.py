@@ -123,6 +123,16 @@ def cached_history(cfda: list[str], state, fresh_hours: int):
         return None
 
 
+def all_live_opportunities() -> list[dict]:
+    """Every non-archived Grants.gov opportunity in the warehouse (title-only forecasted
+    ones included) — the candidate universe for a match."""
+    try:
+        return list(_db().opportunities.find({"source": "grants_gov", "archived_at": {"$exists": False}}, {"_id": 0}))
+    except Exception:
+        log.exception("warehouse: all_live_opportunities failed")
+        return []
+
+
 # ---- read side (used by the GraphQL warehouse queries) ----
 
 def stored_opportunities(

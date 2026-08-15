@@ -30,6 +30,30 @@ async def search(
     return (data.get("data") or {}).get("oppHits") or []
 
 
+async def search_all(statuses: str = "posted|forecasted", page: int = 500) -> list[dict[str, Any]]:
+    """Every opportunity on Grants.gov for the given statuses — paginated, no keyword.
+    ~1.7K records as of Aug 2026; 4 requests."""
+    out: list[dict[str, Any]] = []
+    async with httpx.AsyncClient() as client:
+        start = 0
+        while True:
+            payload = {"keyword": "", "oppStatuses": statuses, "rows": page, "startRecordNum": start}
+            r = await client.post(SEARCH_URL, json=payload, timeout=60)
+            r.raise_for_status()
+            data = r.json().get("data") or {}
+            hits = data.get("oppHits") or []
+            out.extend(hits)
+            total = int(data.get("hitCount") or 0)
+            start += page
+            if not hits or start >= total:
+                break
+    # dedupe by id (the API can repeat across pages)
+    seen: dict[str, dict] = {}
+    for h in out:
+        seen.setdefault(str(h.get("id")), h)
+    return list(seen.values())
+
+
 async def search_many(keywords: list[str], rows_each: int = 25) -> list[dict[str, Any]]:
     """Run several keyword searches concurrently and dedupe by opportunity id."""
     async with httpx.AsyncClient() as client:

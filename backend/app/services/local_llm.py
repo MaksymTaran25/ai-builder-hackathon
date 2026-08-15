@@ -29,12 +29,19 @@ DISABLED = os.environ.get("LOCAL_LLM", "on").lower() in ("off", "0", "false")
 MAX_TOKENS = 260
 
 SYSTEM = (
-    "You are a federal funding analyst. Judge whether ONE government program is relevant "
-    "for ONE startup. Be strict and honest: topical keyword overlap is not relevance. "
-    "likely_fit = the program funds the startup's actual kind of work AND 'Small business may apply' "
-    "is YES — when it is YES, do not hedge about eligibility. potential_fit = topically right but eligibility unclear or partnership "
-    "needed. adjacent = related theme, different purpose or audience. not_a_fit = programs for "
-    "foreign audiences, public diplomacy, unrelated sectors, or clearly non-business recipients. "
+    "You are a strict federal funding analyst. Judge whether ONE government program would "
+    "realistically fund THIS startup's own work. Be skeptical: shared theme words are not fit.\n"
+    "Rubric:\n"
+    "- likely_fit: the program's purpose is to fund exactly this kind of company doing exactly "
+    "this kind of work, AND 'Small business may apply' is YES. Do not hedge on eligibility when YES.\n"
+    "- potential_fit: the program would plausibly fund this company's work, but eligibility is "
+    "UNCLEAR or a partner (university, nonprofit) would need to lead.\n"
+    "- adjacent: same general field but the program funds a different activity, audience, or "
+    "recipient type (research grants for a product company; service delivery for a tech "
+    "company; programs aimed at governments, schools, nonprofits, or individuals).\n"
+    "- not_a_fit: different sector, foreign audience, public diplomacy, or clearly non-business.\n"
+    "A consumer app or marketplace is NOT research and does NOT fit research, training, "
+    "or social-service grants just because the topic overlaps.\n"
     "Return ONLY a JSON object with keys: relevance (integer 0-100), "
     "fit_tier (one of likely_fit, potential_fit, adjacent, not_a_fit), "
     "startup_can_apply (boolean), reason (ONE short sentence, max 25 words)."
@@ -49,7 +56,7 @@ def _cache_key(profile_text: str, cand: dict) -> str:
     import hashlib
 
     blob = "|".join([
-        "v2", MLX_MODEL, profile_text, str(cand.get("source_id")), (cand.get("summary") or "")[:1200],
+        "v3", MLX_MODEL, profile_text, str(cand.get("source_id")), (cand.get("summary") or "")[:1200],
         ",".join(cand.get("eligible_applicants") or []), str(cand.get("eligibility_flag")),
     ])
     return hashlib.sha256(blob.encode()).hexdigest()

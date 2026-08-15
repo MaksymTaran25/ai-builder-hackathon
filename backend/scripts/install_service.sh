@@ -8,7 +8,7 @@
 #   bash scripts/install_service.sh uninstall
 set -euo pipefail
 
-LABEL="com.govmatch.backend"
+LABEL="com.govmatch.server1"
 BACKEND_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$BACKEND_DIR/data/logs"
@@ -44,19 +44,17 @@ cat > "$PLIST" <<EOF
 <plist version="1.0"><dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key><array>
-    <string>$UV_BIN</string><string>run</string><string>uvicorn</string>
-    <string>app.main:app</string><string>--host</string><string>0.0.0.0</string>
-    <string>--port</string><string>$PORT</string>
+    <string>/bin/bash</string><string>$BACKEND_DIR/scripts/run_server.sh</string>
   </array>
   <key>WorkingDirectory</key><string>$BACKEND_DIR</string>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>5</integer>
+  <key>StartInterval</key><integer>60</integer>
   <key>StandardOutPath</key><string>$LOG_DIR/backend.log</string>
-  <key>StandardErrorPath</key><string>$LOG_DIR/backend.log</string>
+  <key>StandardErrorPath</key><string>$LOG_DIR/backend.err.log</string>
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HOME</key><string>$HOME</string>
+    <key>GOVMATCH_PORT</key><string>$PORT</string>
   </dict>
 </dict></plist>
 EOF

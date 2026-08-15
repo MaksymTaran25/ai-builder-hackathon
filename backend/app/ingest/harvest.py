@@ -76,60 +76,95 @@ def _enrich(o: Opportunity, d: dict) -> None:
     o.eligible_applicants = descs[:8]
 
 
+def _tag_by_keywords(o: Opportunity) -> list[str]:
+    """Literal keyword tags (fast, precise, low recall). Combined with embedding tags below."""
+    text = f"{o.title} {o.summary}".lower()
+    return sorted(dom for dom, kws in DOMAINS.items() if any(k.lower() in text for k in kws))
+
+
+def _tag_by_embeddings(opps: list[Opportunity], threshold: float = 0.52) -> dict[str, list[str]]:
+    """Semantic domain tags: embed every program and every domain description once,
+    tag where cosine similarity clears the threshold. One batch, a few seconds for 1.7K."""
+    import numpy as np
+
+    from ..services import embeddings
+
+    domain_names = list(DOMAINS)
+    domain_texts = [f"{d.replace('_', ' ')}: {', '.join(kws)}" for d, kws in DOMAINS.items()]
+    prog_texts = [f"{o.title}. {(o.summary or '')[:600]}" for o in opps]
+    dv = embeddings.embed(domain_texts)
+    pv = embeddings.embed(prog_texts)
+    sims = pv @ dv.T  # (programs, domains)
+    out: dict[str, list[str]] = {}
+    for o, row in zip(opps, sims):
+        tags = [domain_names[j] for j in np.argsort(-row)[:4] if row[j] >= threshold]
+        out[o.source_id] = tags
+    return out
+
+
 async def harvest(dry_run: bool = False, tag: bool = False, rows_each: int = 40) -> dict:
+    """Full sweep: EVERY posted + forecasted opportunity on Grants.gov, enriched. No cap."""
     t0 = time.time()
     started = datetime.now(timezone.utc).isoformat()
 
-    # 1. search every keyword, remembering which domains hit each opportunity
-    all_kws = [(dom, kw) for dom, kws in DOMAINS.items() for kw in kws]
-    hits = await grants_gov.search_many([kw for _, kw in all_kws], rows_each=rows_each)
-    kw_to_dom = {kw: dom for dom, kw in all_kws}
-    log.info("search: %d keywords -> %d unique opportunities", len(all_kws), len(hits))
-
-    opps: list[Opportunity] = []
-    domains_by_id: dict[str, list[str]] = {}
-    for h in hits:
-        o = _grants_hit_to_opp(h)
-        doms = sorted({kw_to_dom[k] for k in h.get("_matched_keywords", []) if k in kw_to_dom})
-        domains_by_id[o.source_id] = doms
-        opps.append(o)
+    # 1. the whole universe, paginated (empty keyword = everything)
+    hits = await grants_gov.search_all("posted|forecasted")
+    log.info("search: full sweep -> %d opportunities (posted + forecasted)", len(hits))
+    opps: list[Opportunity] = [_grants_hit_to_opp(h) for h in hits]
 
     if dry_run:
-        return {"searched": len(all_kws), "found": len(hits), "dry_run": True}
+        return {"found": len(hits), "dry_run": True}
 
-    # 2. enrich in batches (fetchOpportunity is fast but be polite)
+    # 2. enrich every one (batches of 50, concurrent within a batch)
     ids = [o.source_id.removeprefix("gg-") for o in opps]
     details: dict[str, dict] = {}
-    for i in range(0, len(ids), 40):
-        batch = ids[i:i + 40]
-        details.update(await grants_gov.fetch_details_many(batch))
-        log.info("enriched %d/%d", min(i + 40, len(ids)), len(ids))
+    for i in range(0, len(ids), 50):
+        details.update(await grants_gov.fetch_details_many(ids[i:i + 50]))
+        if (i // 50) % 5 == 0 or i + 50 >= len(ids):
+            log.info("enriched %d/%d", min(i + 50, len(ids)), len(ids))
     for o in opps:
         d = details.get(o.source_id.removeprefix("gg-"))
         if d:
             _enrich(o, d)
 
-    # 3. optional LLM domain tagging (expensive: ~0.6s per opportunity)
+    # 3. domain tags: literal keywords ∪ semantic embeddings (all programs), optional LLM on top
+    kw_tags = {o.source_id: _tag_by_keywords(o) for o in opps}
+    emb_tags = await asyncio.to_thread(_tag_by_embeddings, opps)
+    domains_by_id = {sid: sorted(set(kw_tags.get(sid, [])) | set(emb_tags.get(sid, []))) for sid in kw_tags}
     tagged = 0
     if tag:
         tagged = await _tag_domains(opps, domains_by_id)
 
-    # 4. upsert with domain tags + harvest metadata
+    # 4. upsert everything; mark anything no longer on Grants.gov as archived
     await asyncio.to_thread(_upsert_all, opps, domains_by_id)
+    archived = await asyncio.to_thread(_archive_missing, {o.source_id for o in opps})
 
     summary = {
         "started_at": started,
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "seconds": round(time.time() - t0, 1),
-        "keywords": len(all_kws),
         "found": len(hits),
         "enriched": len(details),
+        "archived_stale": archived,
         "llm_tagged": tagged,
         "eligibility": _count(opps, "eligibility_flag"),
         "by_domain": {d: sum(1 for v in domains_by_id.values() if d in v) for d in DOMAINS},
+        "untagged": sum(1 for v in domains_by_id.values() if not v),
     }
     await asyncio.to_thread(_record_run, summary)
     return summary
+
+
+def _archive_missing(live_ids: set[str]) -> int:
+    """Opportunities in the warehouse that Grants.gov no longer lists: flag, don't delete."""
+    from ..services.store import _db, _now
+
+    col = _db().opportunities
+    res = col.update_many(
+        {"source": "grants_gov", "source_id": {"$nin": list(live_ids)}, "archived_at": {"$exists": False}},
+        {"$set": {"archived_at": _now()}},
+    )
+    return res.modified_count
 
 
 def _upsert_all(opps: list[Opportunity], domains_by_id: dict[str, list[str]]) -> None:
@@ -145,6 +180,7 @@ def _upsert_all(opps: list[Opportunity], domains_by_id: dict[str, list[str]]) ->
     col.create_index("domains")
     col.create_index("agency")
     col.create_index("eligibility_flag")
+    col.create_index("archived_at")
     col.create_index([("title", "text"), ("summary", "text")], name="opp_text", weights={"title": 3, "summary": 1})
 
 

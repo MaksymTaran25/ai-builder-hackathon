@@ -16,14 +16,14 @@ from ..models import (
     SimilarCompany,
     StartupProfile,
 )
-from . import eligibility, grants_gov, llm, local_llm, sbir, store, usaspending, utah
+from . import eligibility, grants_gov, index, llm, local_llm, sbir, store, usaspending, utah
 
 log = logging.getLogger(__name__)
 
-PREFILTER_N = 40   # candidates that get full details fetched
-LLM_JUDGE_N = 40   # the LLM reads every candidate that gets details — nothing shown unvetted
+SIM_FLOOR = 0.52       # every warehouse program above this similarity is a candidate (no count cap)
+ADJACENT_TAIL = 15     # programs just below the floor kept as adjacent context
+MAX_LLM_READS = int(__import__('os').environ.get('MAX_LLM_READS', '400'))  # safety valve only
 MIN_SHOWN = 5      # below this many real fits, adjacent programs fill in
-HISTORY_TOP_N = 40 # opportunities that get USAspending history
 
 _TIER_ORDER = [FitTier.not_fit, FitTier.adjacent, FitTier.potential, FitTier.likely]
 
@@ -101,16 +101,34 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
     rd = _has_rd_signal(profile)
 
     hits, sbir_opps, similar_rows = await asyncio.gather(
-        grants_gov.search_many(plan.keywords[:8], rows_each=30),
+        grants_gov.search_many(plan.keywords[:8], rows_each=30),   # freshness: anything posted since last harvest
         asyncio.to_thread(sbir.pathway_opportunities, topics, profile.state),
         asyncio.to_thread(sbir.similar_awards, topics, profile.state, 400),
     )
-
-    opps = [_grants_hit_to_opp(h) for h in hits]
     kw_by_id = {f"gg-{h.get('id')}": h.get("_matched_keywords", []) for h in hits}
 
-    # Stage A: cheap title-level semantic prefilter so we only fetch details for plausible ones
-    opps = await asyncio.to_thread(_prefilter, profile, opps, kw_by_id)
+    # Stage A: score the ENTIRE warehouse (all posted + forecasted programs) against the
+    # profile via the in-memory embedding index; live title hits not yet in the warehouse
+    # are added so brand-new postings still surface. No count cap: every program above
+    # the similarity floor is a candidate, plus a short adjacent tail below it.
+    query = " ".join(filter(None, [profile.description, profile.industry, " ".join(profile.technology or [])]))
+    scored = await asyncio.to_thread(index.score_all, query)
+    known = {d["source_id"] for d, _ in scored}
+    opps: list[Opportunity] = []
+    for d, sim in scored:
+        if sim >= SIM_FLOOR or len(opps) < ADJACENT_TAIL:
+            o = Opportunity(**{k: v for k, v in d.items() if k in Opportunity.model_fields})
+            o.fit_tier = FitTier.adjacent
+            opps.append(o)
+        elif len(opps) >= ADJACENT_TAIL and sim < SIM_FLOOR:
+            break
+    for h in hits:
+        if f"gg-{h.get('id')}" not in known:
+            opps.append(_grants_hit_to_opp(h))
+    if len(opps) > MAX_LLM_READS:
+        log.warning("candidate set %d exceeds MAX_LLM_READS=%d; truncating (raise env to lift)", len(opps), MAX_LLM_READS)
+        opps = opps[:MAX_LLM_READS]
+    log.info("candidates: %d (floor %.2f) from %d warehouse programs + %d live hits", len(opps), SIM_FLOOR, len(scored), len(hits))
 
     # Stage B: full details for the survivors — synopsis, award data, applicant types
     await _attach_details(opps)
@@ -138,7 +156,10 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
     # notch, veto outright with not_a_fit, and promote by at most one; the parsed
     # applicant-type code (authoritative) overrides its "can't apply" guess.
     opps.sort(key=lambda o: o.score, reverse=True)
-    judged_set = opps[:LLM_JUDGE_N]
+    # Every candidate is read — nothing shown unvetted. Exception: a company with no R&D
+    # signal can't have real federal fits (gate below), so reading hundreds of programs
+    # would only delay the honest answer; read a short top slice for adjacent context.
+    judged_set = list(opps) if rd else opps[:ADJACENT_TAIL]
     verdicts = await local_llm.judge(
         profile,
         [
@@ -230,11 +251,15 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
         merged.sort(key=lambda o: (tier_rank[o.fit_tier], o.score), reverse=True)
 
     if not rd:
+        # No R&D signal (e.g. a consumer marketplace): federal grants fund research, services
+        # by eligible institutions, or SBIR R&D — none of which this company does. Nothing
+        # can be a real fit; keep the map honest and show programs only as adjacent context.
         for o in merged:
-            if o.fit_tier == FitTier.likely:
-                o.fit_tier = FitTier.potential
-                o.score = _band_score(FitTier.potential, o.score)
+            if o.fit_tier in (FitTier.likely, FitTier.potential):
+                o.fit_tier = FitTier.adjacent
+                o.score = _band_score(FitTier.adjacent, o.score)
         merged.sort(key=lambda o: (tier_rank[o.fit_tier], o.score), reverse=True)
+        merged = merged[:MIN_SHOWN]  # a handful of adjacent programs, not a wall of them
 
     # Weak overall = no R&D signal, or fewer than 3 real fits, or nothing green at all.
     # Keyed on tiers (judgment), not banded scores (position within a tier).
@@ -253,7 +278,7 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
         merged.extend(utah.match_programs(profile.description, profile.industry, max_n=3))
 
     # Stage E: history for the top federal cards + explanations for everything
-    await _attach_history(merged[:HISTORY_TOP_N], profile)
+    await _attach_history(merged, profile)
     expl = await asyncio.gather(
         *(
             llm.explain(
@@ -287,27 +312,6 @@ async def run_match(profile: StartupProfile) -> MatchResponse:
 
 
 # ------------------------------------------------------------------ stages
-
-def _prefilter(profile: StartupProfile, opps: list[Opportunity], kw_by_id) -> list[Opportunity]:
-    if len(opps) <= PREFILTER_N:
-        return opps
-    from . import embeddings
-
-    query = " ".join(
-        filter(None, [profile.description, profile.industry, " ".join(profile.technology or [])])
-    )
-    try:
-        sims = embeddings.similarities(query, [f"{o.title} — {o.agency}" for o in opps])
-    except Exception:
-        log.exception("prefilter embeddings failed; keeping first N")
-        return opps[:PREFILTER_N]
-    ranked = sorted(
-        zip(opps, sims),
-        key=lambda p: float(p[1]) + 0.02 * len(kw_by_id.get(p[0].source_id, [])),
-        reverse=True,
-    )
-    return [o for o, _ in ranked[:PREFILTER_N]]
-
 
 DETAIL_FIELDS = (
     "award_floor_usd", "award_ceiling_usd", "estimated_total_funding_usd", "expected_awards",
