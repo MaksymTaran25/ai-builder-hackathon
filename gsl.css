@@ -1,0 +1,1010 @@
+/* G$L Government Funding Marketplace CSS (KSL Classifieds Theme) */
+
+:root {
+  --primary-navy: #002b5c;
+  --secondary-navy: #004080;
+  --accent-blue: #0066cc;
+  --accent-blue-hover: #004fb3;
+  --accent-gold: #f5a623;
+  --bg-light: #f4f6f8;
+  --card-bg: #ffffff;
+  --text-main: #1c252c;
+  --text-muted: #657786;
+  --border-color: #e1e8ed;
+  
+  /* Funding Type Colors */
+  --grant-green: #10b981;
+  --grant-bg: #ecfdf5;
+  --rfq-blue: #2563eb;
+  --rfq-bg: #eff6ff;
+  --sbir-purple: #8b5cf6;
+  --sbir-bg: #f5f3ff;
+  --contract-teal: #0d9488;
+  --contract-bg: #f0fdfa;
+  --rfp-amber: #d97706;
+  --rfp-bg: #fffbeb;
+  
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.12);
+  --radius: 8px;
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-light);
+  color: var(--text-main);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ==========================================================================
+   Top Header (KSL Style Deep Navy Navigation Bar)
+   ========================================================================== */
+.gsl-header {
+  background-color: #002b5c;
+  color: #ffffff;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.gsl-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0.6rem 1.5rem;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+/* KSL-Inspired Round Logo */
+.gsl-logo-circle {
+  width: 42px;
+  height: 42px;
+  border: 2.5px solid #ffffff;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #ffffff;
+  text-decoration: none;
+  letter-spacing: -0.5px;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.gsl-logo-circle:hover {
+  transform: scale(1.05);
+  border-color: #e2e8f0;
+}
+
+.gsl-logo-circle .dollar-sign {
+  color: #ffffff;
+}
+
+.gsl-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #ffffff;
+  text-decoration: none;
+  letter-spacing: -0.5px;
+}
+
+.gsl-logo-badge {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.gsl-nav-links {
+  display: flex;
+  gap: 1.2rem;
+  list-style: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.gsl-nav-links a {
+  color: #d1d5db;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.gsl-nav-links a:hover, .gsl-nav-links a.active {
+  color: #ffffff;
+}
+
+.gsl-nav-links a.active {
+  font-weight: 700;
+  border-bottom: 2px solid var(--accent-gold);
+  padding-bottom: 2px;
+}
+
+.gsl-header-right {
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  font-size: 0.88rem;
+}
+
+.location-weather {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #e5e7eb;
+}
+
+.user-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.btn-login {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 0.4rem 0.9rem;
+  border-radius: 20px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-login:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Secondary Action Sub-Header */
+.gsl-subnav {
+  background-color: #ffffff;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.6rem 1.5rem;
+}
+
+.gsl-subnav-inner {
+  max-width: 1320px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.subnav-links {
+  display: flex;
+  gap: 1.5rem;
+  list-style: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.subnav-links a {
+  color: var(--primary-navy);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: color 0.2s ease;
+}
+
+.subnav-links a:hover {
+  color: var(--accent-blue);
+}
+
+.btn-post-rfq {
+  background-color: var(--accent-blue);
+  color: #ffffff;
+  border: none;
+  padding: 0.5rem 1.1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.btn-post-rfq:hover {
+  background-color: var(--accent-blue-hover);
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   Page Layout & Container
+   ========================================================================== */
+.gsl-container {
+  max-width: 1320px;
+  margin: 1.2rem auto 3rem auto;
+  padding: 0 1.5rem;
+}
+
+.gsl-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 0.8rem;
+}
+
+.gsl-breadcrumbs a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.gsl-breadcrumbs a:hover {
+  color: var(--accent-blue);
+}
+
+.gsl-page-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 1.2rem;
+}
+
+.gsl-page-title-row h1 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--primary-navy);
+}
+
+.gsl-results-count {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.gsl-results-count span {
+  color: var(--primary-navy);
+  font-weight: 700;
+}
+
+/* Layout Grid */
+.gsl-main-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+/* ==========================================================================
+   Sidebar Filters (KSL Style)
+   ========================================================================== */
+.gsl-sidebar {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  padding: 1.2rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.filter-header-mobile {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.filter-header-mobile h3 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.btn-reset-filters {
+  background: none;
+  border: none;
+  color: var(--accent-blue);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-reset-filters:hover {
+  text-decoration: underline;
+}
+
+.filter-group {
+  margin-bottom: 1.4rem;
+}
+
+.filter-group-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--primary-navy);
+  margin-bottom: 0.6rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Type Toggle Buttons */
+.funding-type-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.btn-type-toggle {
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.5rem 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.btn-type-toggle:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.btn-type-toggle.active {
+  background-color: var(--primary-navy);
+  color: #ffffff;
+  border-color: var(--primary-navy);
+}
+
+/* Form Controls in Sidebar */
+.filter-select, .filter-input {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  background-color: #ffffff;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.filter-select:focus, .filter-input:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.15);
+}
+
+.checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
+.range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ==========================================================================
+   Main Feed & Search
+   ========================================================================== */
+.gsl-feed-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+/* Main Search Component */
+.gsl-search-bar-wrapper {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gsl-search-bar-wrapper:focus-within {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15);
+}
+
+.search-icon-svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.gsl-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--text-main);
+}
+
+.gsl-search-input::placeholder {
+  color: #9ca3af;
+}
+
+.btn-clear-search {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.3rem;
+  display: none;
+}
+
+.btn-clear-search.visible {
+  display: block;
+}
+
+.btn-search-submit {
+  background-color: var(--primary-navy);
+  color: #ffffff;
+  border: none;
+  padding: 0.55rem 1.2rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.btn-search-submit:hover {
+  background-color: var(--accent-blue);
+}
+
+/* Toolbar (Sort & Display Controls) */
+.gsl-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  box-shadow: var(--shadow-sm);
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.toggle-sidebar-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--primary-navy);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.toggle-sidebar-btn:hover {
+  background-color: var(--bg-light);
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.sort-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sort-select {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--primary-navy);
+  font-weight: 600;
+  background-color: #ffffff;
+  outline: none;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Opportunity Cards (KSL Style - Text-Focused for Government Funding)
+   ========================================================================== */
+.opportunity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.opportunity-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.4rem;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.opportunity-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: #cbd5e1;
+}
+
+.card-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.type-and-agency {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* Color Coded Badges */
+.badge-type {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.25rem 0.65rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.badge-grant { background: var(--grant-bg); color: var(--grant-green); border: 1px solid #a7f3d0; }
+.badge-rfq { background: var(--rfq-bg); color: var(--rfq-blue); border: 1px solid #bfdbfe; }
+.badge-sbir { background: var(--sbir-bg); color: var(--sbir-purple); border: 1px solid #ddd6fe; }
+.badge-contract { background: var(--contract-bg); color: var(--contract-teal); border: 1px solid #99f6e4; }
+.badge-rfp { background: var(--rfp-bg); color: var(--rfp-amber); border: 1px solid #fde68a; }
+
+.agency-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.card-actions-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-bookmark {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: color 0.2s ease, transform 0.1s ease;
+  line-height: 1;
+}
+
+.btn-bookmark:hover {
+  color: var(--accent-gold);
+  transform: scale(1.15);
+}
+
+.btn-bookmark.bookmarked {
+  color: var(--accent-gold);
+}
+
+/* Card Main Title */
+.opportunity-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--primary-navy);
+  line-height: 1.35;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.opportunity-title:hover {
+  color: var(--accent-blue);
+}
+
+/* Key Metrics Banner */
+.opportunity-metrics {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  background-color: #f8fafc;
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #edf2f7;
+  flex-wrap: wrap;
+}
+
+.metric-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.metric-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.metric-value {
+  font-weight: 700;
+  color: var(--primary-navy);
+}
+
+.metric-value.amount {
+  color: var(--grant-green);
+  font-size: 0.95rem;
+}
+
+.metric-value.deadline-closing {
+  color: #dc2626;
+}
+
+.metric-value.deadline-normal {
+  color: #2563eb;
+}
+
+/* Description & Tags */
+.opportunity-desc {
+  font-size: 0.88rem;
+  color: #475569;
+  line-clamp: 2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.5;
+}
+
+.opportunity-tags {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+
+.tag-pill {
+  font-size: 0.75rem;
+  background: var(--bg-light);
+  color: var(--text-muted);
+  padding: 0.2rem 0.55rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  font-weight: 500;
+}
+
+/* Card Bottom Actions */
+.card-bottom-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+.location-tag {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 500;
+}
+
+.card-cta-group {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.btn-details {
+  background-color: var(--accent-blue);
+  color: #ffffff;
+  border: none;
+  padding: 0.45rem 0.95rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.btn-details:hover {
+  background-color: var(--accent-blue-hover);
+}
+
+/* Empty State */
+.empty-state {
+  background: var(--card-bg);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius);
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.empty-state-icon {
+  font-size: 2.5rem;
+  color: var(--text-muted);
+  margin-bottom: 0.8rem;
+}
+
+.empty-state h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--primary-navy);
+  margin-bottom: 0.4rem;
+}
+
+.empty-state p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.2rem;
+}
+
+/* ==========================================================================
+   Modals (Detail & Post RFQ)
+   ========================================================================== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(9, 32, 63, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1.5rem;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal-card {
+  background: #ffffff;
+  border-radius: 12px;
+  max-width: 780px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  transform: translateY(20px);
+  transition: transform 0.25s ease;
+}
+
+.modal-overlay.active .modal-card {
+  transform: translateY(0);
+}
+
+.modal-header {
+  background: linear-gradient(135deg, var(--primary-navy), #1e3a8a);
+  color: #ffffff;
+  padding: 1.2rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.modal-header-title-box h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 0.4rem;
+  line-height: 1.3;
+}
+
+.btn-close-modal {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: #ffffff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+}
+
+.btn-close-modal:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+.modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.modal-section h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--primary-navy);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid var(--border-color);
+  padding-bottom: 0.3rem;
+}
+
+.modal-grid-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.8rem;
+  background: var(--bg-light);
+  padding: 1rem;
+  border-radius: var(--radius);
+}
+
+.modal-metric-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-metric-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.modal-metric-val {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--primary-navy);
+}
+
+.modal-footer {
+  padding: 1rem 1.5rem;
+  background: #f8fafc;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.form-group-full {
+  grid-column: span 2;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--primary-navy);
+  margin-bottom: 0.3rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 992px) {
+  .gsl-main-layout {
+    grid-template-columns: 1fr;
+  }
+  
+  .gsl-sidebar {
+    display: none;
+  }
+  
+  .gsl-sidebar.mobile-open {
+    display: block;
+  }
+}
+
+@media (max-width: 640px) {
+  .gsl-header-top {
+    flex-direction: column;
+    gap: 0.8rem;
+    align-items: flex-start;
+  }
+  
+  .gsl-nav-links {
+    display: none;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-group-full {
+    grid-column: span 1;
+  }
+}
